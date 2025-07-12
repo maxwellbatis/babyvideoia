@@ -1,0 +1,29 @@
+// schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Credential {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique
+  value      String
+  updated_at DateTime @updatedAt
+}
+
+model AppImage {
+  id                 Int      @id @default(autoincrement())
+  filename           String
+  cloudinaryUrl      String
+  cloudinaryPublicId String
+  tag                String   @default("app-mockup")
+  description        String   @default("")
+  size               Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}

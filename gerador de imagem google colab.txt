@@ -1,0 +1,26 @@
+gerador de imagem google colab 
+rodando na amaquinade@gmail.com
+meu google colab 
+
+https://colab.research.google.com/drive/1mF0T8aXje_5nQ515ATx8RFaIPr6w1QTk#scrollTo=PjzwxTkPSPHf
+-----------------------------------------------------------------------------------------------------
+https://github.com/TheLastBen/fast-stable-diffusion
+
+https://colab.research.google.com/github/TheLastBen/fast-stable-diffusion/blob/main/fast_stable_diffusion_AUTOMATIC1111.ipynb
+
+https://colab.research.google.com/github/deforum-art/deforum-stable-diffusion/blob/main/Deforum_Stable_Diffusion.ipynb
+
+https://dashboard.ngrok.com/api-keys/new
+https://civitai.com/images/12221845
+
+-------------------------------------------------------------------------------------------
+modelo realistc stable difusion 
+
+https://civitai.com/api/download/models/501240?type=Model&format=SafeTensor&size=pruned&fp=fp16
+----------------------------------------------------------------------------------------------------
+.env 
+
+DATABASE_URL=postgresql://postgres:postgres123@localhost:5432/baby_diary_vidios_ia
+PORT=3001
+
+--------------------------------------------------------------------------------------------
