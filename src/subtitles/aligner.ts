@@ -91,18 +91,16 @@ export function generateProgressiveSubtitles(text: string, duration: number, mod
       const start = currentTime;
       const end = currentTime + timePerWord;
       
-      // Acumular palavras até o momento atual
-      const accumulatedText = words.slice(0, i + 1).join(' ');
-      
+      // Mostrar apenas a palavra atual
       subtitles.push(
-        `${subtitleIndex}\n${formatTime(start)} --> ${formatTime(end)}\n${accumulatedText}\n`
+        `${subtitleIndex}\n${formatTime(start)} --> ${formatTime(end)}\n${word}\n`
       );
       
       currentTime = end;
       subtitleIndex++;
     }
   } else {
-    // Modo frase por frase (progressivo)
+    // Modo frase por frase (não progressivo)
     const sentences = splitIntoSentences(text);
     const timePerSentence = duration / sentences.length;
     
@@ -111,11 +109,9 @@ export function generateProgressiveSubtitles(text: string, duration: number, mod
       const start = currentTime;
       const end = currentTime + timePerSentence;
       
-      // Acumular frases até o momento atual
-      const accumulatedText = sentences.slice(0, i + 1).join(' ');
-      
+      // Mostrar apenas a frase atual
       subtitles.push(
-        `${subtitleIndex}\n${formatTime(start)} --> ${formatTime(end)}\n${accumulatedText}\n`
+        `${subtitleIndex}\n${formatTime(start)} --> ${formatTime(end)}\n${sentence.trim()}\n`
       );
       
       currentTime = end;
@@ -389,4 +385,3 @@ function formatTime(seconds: number): string {
   const ms = Math.floor((seconds % 1) * 1000).toString().padStart(3, '0');
   return date.toISOString().substr(11, 8) + ',' + ms;
 }
-  
