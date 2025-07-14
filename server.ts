@@ -1039,11 +1039,12 @@ app.post('/api/upload-app-image', uploadImage.single('image'), async (req, res) 
       return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     }
 
-    const { tag, description } = req.body;
-    
+    // Recebe campos extras do frontend (incluindo cena)
+    const { tag, description, sceneId, sceneDescription } = req.body;
+
     console.log(`📱 Upload de imagem do app: ${req.file.filename}`);
-    console.log(`📝 Tag: ${tag}, Descrição: ${description}`);
-    
+    console.log(`📝 Tag: ${tag}, Descrição: ${description}, Cena: ${sceneId}, CenaDesc: ${sceneDescription}`);
+
     // Upload para Cloudinary
     const uploadResult = await cloudinary.uploader.upload(req.file.path, {
       resource_type: 'image',
@@ -1051,38 +1052,27 @@ app.post('/api/upload-app-image', uploadImage.single('image'), async (req, res) 
       public_id: `app_${Date.now()}`,
       tags: tag ? [tag] : ['app-mockup']
     });
-    
-    // Por enquanto, salvar apenas no arquivo JSON (sem banco)
-    const imageData = {
-      id: Date.now(),
-      filename: req.file.filename,
-      cloudinaryUrl: uploadResult.secure_url,
-      cloudinaryPublicId: uploadResult.public_id,
-      tag: tag || 'app-mockup',
-      description: description || '',
-      size: req.file.size,
-      createdAt: new Date().toISOString()
-    };
-    
-    // Salvar em arquivo JSON temporário
-    const appImagesFile = path.join(__dirname, 'output', 'app_images.json');
-    let appImages = [];
-    
-    if (fs.existsSync(appImagesFile)) {
-      appImages = JSON.parse(fs.readFileSync(appImagesFile, 'utf8'));
-    }
-    
-    appImages.push(imageData);
-    fs.writeFileSync(appImagesFile, JSON.stringify(appImages, null, 2));
-    
-    // Remover arquivo temporário
+
+    // Salvar no banco de dados via Prisma
+    const imageData = await prisma.appImage.create({
+      data: {
+        filename: req.file.filename,
+        cloudinaryUrl: uploadResult.secure_url,
+        cloudinaryPublicId: uploadResult.public_id,
+        tag: tag || 'app-mockup',
+        description: description || '',
+        sceneId: sceneId || null,
+        sceneDescription: sceneDescription || null,
+        size: req.file.size
+      }
+    });
+
+    // Apagar o arquivo local após o vídeo final ser gerado
     fs.unlinkSync(req.file.path);
-    
-    console.log(`✅ Imagem do app enviada: ${uploadResult.secure_url}`);
-    
-    res.json({ 
-      success: true, 
-      message: 'Imagem enviada com sucesso',
+
+    res.json({
+      success: true,
+      message: 'Imagem enviada e salva no banco com sucesso',
       image: imageData
     });
   } catch (error) {

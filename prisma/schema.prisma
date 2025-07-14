@@ -23,6 +23,8 @@ model AppImage {
   cloudinaryPublicId String
   tag                String   @default("app-mockup")
   description        String   @default("")
+  sceneId            String?  // Novo campo para associar à cena
+  sceneDescription   String?  // Novo campo para descrição da cena
   size               Int
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
