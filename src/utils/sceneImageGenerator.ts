@@ -1,4 +1,5 @@
 import { generateWithFallback } from '../text/gemini-groq';
+import { getCredential } from './credentials';
 
 export interface SceneImageSuggestion {
   sceneNumber: number;
@@ -72,7 +73,16 @@ ${context.cenas.map((scene, index) => `${index + 1}. ${scene}`).join('\n')}
 Responda em JSON válido seguindo exatamente o formato especificado.`;
 
   try {
-    const response = await generateWithFallback(userPrompt, systemPrompt);
+    // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+    let response: string;
+    if (apiKey) {
+      response = await generateWithFallback(userPrompt, systemPrompt, async (name: string) => {
+        if (name === 'GEMINI_KEY') return apiKey;
+        return await getCredential(name);
+      });
+    } else {
+      response = await generateWithFallback(userPrompt, systemPrompt);
+    }
     
     // Tentar extrair JSON da resposta
     const jsonMatch = response.match(/\[[\s\S]*\]/);
@@ -138,7 +148,16 @@ FORMATO: Responda apenas com uma lista simples, um tema por linha.`;
   const userPrompt = `Sugira temas de imagens para um vídeo sobre "${context.tema}" do tipo "${context.tipo}" para "${context.publico}".`;
 
   try {
-    const response = await generateWithFallback(userPrompt, systemPrompt);
+    // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+    let response: string;
+    if (apiKey) {
+      response = await generateWithFallback(userPrompt, systemPrompt, async (name: string) => {
+        if (name === 'GEMINI_KEY') return apiKey;
+        return await getCredential(name);
+      });
+    } else {
+      response = await generateWithFallback(userPrompt, systemPrompt);
+    }
     
     // Extrair temas da resposta
     const themes = response
@@ -202,7 +221,16 @@ Contexto: ${context}
 Responda em JSON com: analysis, improvements (array), newPrompt`;
 
   try {
-    const response = await generateWithFallback(userPrompt, systemPrompt);
+    // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+    let response: string;
+    if (apiKey) {
+      response = await generateWithFallback(userPrompt, systemPrompt, async (name: string) => {
+        if (name === 'GEMINI_KEY') return apiKey;
+        return await getCredential(name);
+      });
+    } else {
+      response = await generateWithFallback(userPrompt, systemPrompt);
+    }
     
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {

@@ -48,6 +48,116 @@ export function generateSubtitles(text: string, duration: number): string[] {
   return subtitles;
 }
 
+// [NOVO] Função para usar SRT do Whisper diretamente (sem conversão)
+export function useWhisperSrt(srtContent: string): string[] {
+  if (!srtContent || srtContent.trim().length === 0) {
+    throw new Error('Conteúdo SRT vazio');
+  }
+
+  // Dividir em blocos SRT
+  const blocks = srtContent.trim().split('\n\n');
+  const subtitles: string[] = [];
+
+  for (const block of blocks) {
+    const lines = block.trim().split('\n');
+    if (lines.length >= 3) {
+      // Manter o formato SRT original: número, timestamp, texto
+      const number = lines[0];
+      const timestamp = lines[1];
+      const text = lines.slice(2).join(' ');
+      
+      if (text.trim()) {
+        subtitles.push(`${number}\n${timestamp}\n${text}\n`);
+      }
+    }
+  }
+
+  return subtitles;
+}
+
+// [NOVO] Função para gerar legendas progressivas (palavra por palavra)
+export function generateProgressiveSubtitles(text: string, duration: number, mode: 'word' | 'phrase' = 'word'): string[] {
+  const subtitles: string[] = [];
+  let currentTime = 0;
+  let subtitleIndex = 1;
+
+  if (mode === 'word') {
+    // Modo palavra por palavra
+    const words = text.split(' ').filter(word => word.trim().length > 0);
+    const timePerWord = duration / words.length;
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const start = currentTime;
+      const end = currentTime + timePerWord;
+      
+      // Acumular palavras até o momento atual
+      const accumulatedText = words.slice(0, i + 1).join(' ');
+      
+      subtitles.push(
+        `${subtitleIndex}\n${formatTime(start)} --> ${formatTime(end)}\n${accumulatedText}\n`
+      );
+      
+      currentTime = end;
+      subtitleIndex++;
+    }
+  } else {
+    // Modo frase por frase (progressivo)
+    const sentences = splitIntoSentences(text);
+    const timePerSentence = duration / sentences.length;
+    
+    for (let i = 0; i < sentences.length; i++) {
+      const sentence = sentences[i];
+      const start = currentTime;
+      const end = currentTime + timePerSentence;
+      
+      // Acumular frases até o momento atual
+      const accumulatedText = sentences.slice(0, i + 1).join(' ');
+      
+      subtitles.push(
+        `${subtitleIndex}\n${formatTime(start)} --> ${formatTime(end)}\n${accumulatedText}\n`
+      );
+      
+      currentTime = end;
+      subtitleIndex++;
+    }
+  }
+
+  return subtitles;
+}
+
+// [NOVO] Função para converter SRT do Whisper em legendas progressivas
+export function convertWhisperToProgressive(srtContent: string, mode: 'word' | 'phrase' = 'word'): string[] {
+  if (!srtContent || srtContent.trim().length === 0) {
+    throw new Error('Conteúdo SRT vazio');
+  }
+
+  // Extrair todo o texto do SRT
+  const blocks = srtContent.trim().split('\n\n');
+  const fullText = blocks.map(block => {
+    const lines = block.trim().split('\n');
+    return lines.slice(2).join(' '); // Pega apenas o texto
+  }).join(' ');
+
+  // Calcular duração total baseada no último timestamp
+  const lastBlock = blocks[blocks.length - 1];
+  const lastTimestamp = lastBlock.split('\n')[1];
+  const totalDuration = parseTimestampToSeconds(lastTimestamp.split(' --> ')[1]);
+
+  // Gerar legendas progressivas
+  return generateProgressiveSubtitles(fullText, totalDuration, mode);
+}
+
+// [NOVO] Função auxiliar para converter timestamp para segundos
+function parseTimestampToSeconds(timestamp: string): number {
+  const parts = timestamp.split(':');
+  const hours = parseInt(parts[0]);
+  const minutes = parseInt(parts[1]);
+  const seconds = parseFloat(parts[2].replace(',', '.'));
+  
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
 // Função para sincronização baseada em análise de áudio (mais precisa)
 export async function generateSubtitlesWithAudioAnalysis(
   text: string, 
@@ -86,6 +196,22 @@ export async function generateSubtitlesWithAudioAnalysis(
     // Fallback para método padrão
     const duration = await getAudioDuration(audioPath);
     return generateSubtitles(text, duration);
+  }
+}
+
+// [NOVO] Função para sincronização progressiva com análise de áudio
+export async function generateProgressiveSubtitlesWithAudio(
+  text: string, 
+  audioPath: string,
+  mode: 'word' | 'phrase' = 'word'
+): Promise<string[]> {
+  try {
+    const duration = await getAudioDuration(audioPath);
+    return generateProgressiveSubtitles(text, duration, mode);
+  } catch (error) {
+    console.error('Erro na análise de áudio progressiva, usando método padrão:', error);
+    // Fallback para método padrão
+    return generateProgressiveSubtitles(text, 30, mode);
   }
 }
 
@@ -130,13 +256,14 @@ async function analyzeAudioTimings(audioPath: string, sentenceCount: number): Pr
   return timings;
 }
 
-// Detectar silêncios no áudio usando ffmpeg
+// Detectar silêncios no áudio usando ffmpeg (melhorado)
 async function detectSilence(audioPath: string): Promise<Array<{start: number, end: number}>> {
   return new Promise((resolve, reject) => {
     const { exec } = require('child_process');
     
-    // Comando para detectar silêncios (menos de -30dB por mais de 0.5s)
-    const command = `ffmpeg -i "${audioPath}" -af silencedetect=noise=-30dB:d=0.5 -f null - 2>&1`;
+    // [MELHORADO] Comando para detectar silêncios menos sensível (-25dB por mais de 0.8s)
+    // Mais adequado para narrações com pausas naturais
+    const command = `ffmpeg -i "${audioPath}" -af silencedetect=noise=-25dB:d=0.8 -f null - 2>&1`;
     
     exec(command, (error: any, stdout: any, stderr: any) => {
       if (error) {
@@ -158,10 +285,14 @@ async function detectSilence(audioPath: string): Promise<Array<{start: number, e
           const endMatch = silenceEndMatches[i]?.match(/silence_end: (\d+\.?\d*)/);
           
           if (startMatch && endMatch) {
-            silences.push({
-              start: parseFloat(startMatch[1]),
-              end: parseFloat(endMatch[1])
-            });
+            const start = parseFloat(startMatch[1]);
+            const end = parseFloat(endMatch[1]);
+            
+            // [MELHORADO] Filtrar silêncios muito curtos ou muito longos
+            const duration = end - start;
+            if (duration >= 0.5 && duration <= 3.0) { // Entre 0.5s e 3s
+              silences.push({ start, end });
+            }
           }
         }
       }

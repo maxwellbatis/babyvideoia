@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { log } from '../utils/logger';
+const imageSize = require('image-size');
 
 export interface VideoResolution {
   width: number;
@@ -63,9 +64,25 @@ export function createKenBurnsAnimation(
   resolution: VideoFormat = 'horizontal'
 ): void {
   const res = getVideoResolution(resolution);
-  
-  const command = `ffmpeg -y -loop 1 -i "${inputImage}" -vf "zoompan=z='min(zoom+0.0005,1.1)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1,scale=${res.scale}" -c:v libx264 -t ${duration} -pix_fmt yuv420p -an "${outputVideo}"`;
-  
+
+  // Detectar proporção da imagem
+  let width = 0;
+  let height = 0;
+  try {
+    const dimensions = imageSize(inputImage);
+    width = dimensions.width || 0;
+    height = dimensions.height || 0;
+  } catch (e) {
+    log(`⚠️ Não foi possível detectar dimensões da imagem, aplicando filtro padrão vertical.`);
+    width = 0;
+    height = 1;
+  }
+
+  // Remover qualquer animação: apenas scale+pad
+  const filterChain = `scale=${res.scale}:force_original_aspect_ratio=decrease,pad=${res.width}:${res.height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+
+  const command = `ffmpeg -y -loop 1 -i "${inputImage}" -vf "${filterChain}" -c:v libx264 -t ${duration} -pix_fmt yuv420p -an "${outputVideo}"`;
+
   log(`FFMPEG: ${command}`);
   execSync(command);
 }
@@ -155,35 +172,32 @@ export function applyVideoStyle(
   } = style;
 
   const res = getVideoResolution(resolution);
-  
+
   // Construir filtros de vídeo
   const filters = [];
-  
+
   // Adicionar texto principal se fornecido
   if (text) {
     filters.push(`drawtext=text='${text}':fontfile=/Windows/Fonts/arial.ttf:fontsize=36:fontcolor=#ffffff:x=(w-text_w)/2:y=h-th-80:box=1:boxcolor=#000000@0.6:boxborderw=3`);
   }
-  
+
   // Adicionar call-to-action
   if (showCallToAction) {
     filters.push(`drawtext=text='📱 Baixe o Baby Diary App':fontfile=/Windows/Fonts/arial.ttf:fontsize=20:fontcolor=#ffffff:x=(w-text_w)/2:y=30:box=1:boxcolor=#000000@0.7:boxborderw=2`);
   }
-  
+
   // Adicionar watermark
   if (showWatermark) {
     filters.push(`drawtext=text='Baby Diary':fontfile=/Windows/Fonts/arial.ttf:fontsize=14:fontcolor=#ffffff@0.6:x=w-tw-10:y=h-th-10`);
   }
-  
-  // Adicionar efeito Ken Burns sutil
-  filters.push(`zoompan=z='min(zoom+0.0003,1.05)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1`);
-  
-  // Redimensionar para a resolução desejada
-  filters.push(`scale=${res.scale}`);
-  
+
+  // Remover qualquer animação: apenas scale+pad
+  filters.push(`scale=${res.scale}:force_original_aspect_ratio=decrease,pad=${res.width}:${res.height}:(ow-iw)/2:(oh-ih)/2:color=black`);
+
   const filterString = filters.join(',');
-  
+
   const command = `ffmpeg -y -i "${inputVideo}" -vf "${filterString}" -c:v libx264 -c:a aac -pix_fmt yuv420p "${outputVideo}"`;
-  
+
   log(`FFMPEG: ${command}`);
   execSync(command);
 }
@@ -195,7 +209,10 @@ export function concatenateVideos(
 ): void {
   const res = getVideoResolution(resolution);
   
-  const command = `ffmpeg -y -f concat -safe 0 -i "${inputList}" -c:v libx264 -c:a aac -pix_fmt yuv420p -vf "scale=${res.scale}" "${outputVideo}"`;
+  // CORREÇÃO: Usar force_original_aspect_ratio=decrease e pad para evitar distorção
+  const filterChain = `scale=${res.scale}:force_original_aspect_ratio=decrease,pad=${res.width}:${res.height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  
+  const command = `ffmpeg -y -f concat -safe 0 -i "${inputList}" -c:v libx264 -c:a aac -pix_fmt yuv420p -vf "${filterChain}" "${outputVideo}"`;
   
   log(`FFMPEG: ${command}`);
   execSync(command);

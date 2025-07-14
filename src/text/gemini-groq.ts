@@ -386,15 +386,19 @@ export async function generateScript(
     '✅ FORMATO OBRIGATÓRIO - RETORNE APENAS JSON PURO:\n' +
     '{\n' +
     '  "cenas": [\n' +
-    '    { "narracao": "Frase natural e emocional (máx ' + palavrasPorCena + ' palavras)", "visual": ["Descrição visual detalhada para imagem"] },\n' +
-    '    { "narracao": "Frase natural e emocional (máx ' + palavrasPorCena + ' palavras)", "visual": ["Descrição visual detalhada para imagem"] }\n' +
+    '    { "narracao": "Frase natural e emocional (máx ' + palavrasPorCena + ' palavras)", "visual": ["Descrição visual 1 - cena principal", "Descrição visual 2 - close-up emocional", "Descrição visual 3 - vista alternativa"] },\n' +
+    '    { "narracao": "Frase natural e emocional (máx ' + palavrasPorCena + ' palavras)", "visual": ["Descrição visual 1 - cena principal", "Descrição visual 2 - close-up emocional", "Descrição visual 3 - vista alternativa"] }\n' +
     '  ]\n' +
     '}\n\n' +
     '🎬 EXEMPLO DE NARRAÇÃO CORRETA PARA ' + template.nome + ':\n' +
     'ERRADO: "Dica número um: amamente corretamente. Dica número dois: durma bem."\n' +
     'CORRETO: "Amamentar pode ser desafiador no início, mas com a posição certa tudo fica mais leve. E quando o bebê dorme bem, você também descansa melhor."\n\n' +
-    '🎨 EXEMPLO DE VISUAL CORRETO:\n' +
-    '"Close da mãe amamentando com expressão de paz, luz suave, ambiente aconchegante com poltrona e cobertor"\n\n' +
+    '🎨 EXEMPLO DE VISUAL CORRETO (3 descrições diferentes por cena):\n' +
+    '"visual": [\n' +
+    '  "Mãe amamentando bebê em poltrona, luz natural suave, ambiente aconchegante",\n' +
+    '  "Close-up do rosto da mãe com expressão de paz e amor, foco seletivo",\n' +
+    '  "Vista de cima, bebê dormindo no colo, mãos da mãe segurando com carinho"\n' +
+    ']\n\n' +
     '⚠️ IMPORTANTE:\n' +
     '- RETORNE APENAS O JSON - SEM TEXTO EXPLICATIVO\n' +
     '- NÃO use markdown (```json)\n' +
@@ -402,7 +406,9 @@ export async function generateScript(
     '- Cada narração deve soar natural e conversacional\n' +
     '- Use o tom ' + template.tom + '\n' +
     '- Siga a estrutura ' + template.estrutura + '\n' +
-    '- Inclua emoção e humanidade nas frases\n\n' +
+    '- Inclua emoção e humanidade nas frases\n' +
+    '- SEMPRE gere 3 descrições visuais diferentes para cada cena\n' +
+    '- Cada descrição visual deve ser específica e única\n\n' +
     'Gere um roteiro ' + template.nome + ' sobre "' + tema + '" que seja ' + template.tom + ' e siga a estrutura ' + template.estrutura + '. RETORNE APENAS O JSON.';
 
   const systemPrompt = 'Você é um roteirista especializado em ' + template.nome + ' para ' + publicoAlvo + '. ' +
@@ -410,7 +416,15 @@ export async function generateScript(
     'Evite frases robóticas, genéricas ou repetitivas. ' +
     'Use linguagem humana, com emoção e variação de ritmo.';
 
-  return generateWithFallback(prompt, systemPrompt);
+  // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+  if (apiKey) {
+    return generateWithFallback(prompt, systemPrompt, async (name: string) => {
+      if (name === 'GEMINI_KEY') return apiKey;
+      return await getCredential(name);
+    });
+  } else {
+    return generateWithFallback(prompt, systemPrompt);
+  }
 }
 
 // Função para gerar posts do Baby Diary
@@ -428,7 +442,16 @@ export async function generateBabyDiaryPost(
     '- Com emojis relevantes\n\n' +
     'Tema: ' + tema + '\n' +
     'Tipo: ' + tipo;
-  return generateWithFallback(prompt, 'Você é um especialista em conteúdo para mães e bebês. Crie posts criativos e informativos.');
+  
+  // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+  if (apiKey) {
+    return generateWithFallback(prompt, 'Você é um especialista em conteúdo para mães e bebês. Crie posts criativos e informativos.', async (name: string) => {
+      if (name === 'GEMINI_KEY') return apiKey;
+      return await getCredential(name);
+    });
+  } else {
+    return generateWithFallback(prompt, 'Você é um especialista em conteúdo para mães e bebês. Crie posts criativos e informativos.');
+  }
 }
 
 // Função para gerar legendas de redes sociais
@@ -446,7 +469,16 @@ export async function generateSocialMediaCaption(
     '- Linguagem jovem e moderna\n\n' +
     'Tema: ' + tema + '\n' +
     'Plataforma: ' + plataforma;
-  return generateWithFallback(prompt, 'Você é um especialista em marketing digital para mães e bebês. Crie legendas otimizadas para redes sociais.');
+  
+  // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+  if (apiKey) {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital para mães e bebês. Crie legendas otimizadas para redes sociais.', async (name: string) => {
+      if (name === 'GEMINI_KEY') return apiKey;
+      return await getCredential(name);
+    });
+  } else {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital para mães e bebês. Crie legendas otimizadas para redes sociais.');
+  }
 }
 
 // Função para gerar conteúdo de marketing
@@ -464,7 +496,16 @@ export async function generateBabyDiaryMarketingContent(
     '- Com call-to-action claro\n\n' +
     'Tipo: ' + tipo + '\n' +
     'Plataforma: ' + plataforma;
-  return generateWithFallback(prompt, 'Você é um especialista em marketing digital. Crie conteúdo persuasivo e profissional.');
+  
+  // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+  if (apiKey) {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital. Crie conteúdo persuasivo e profissional.', async (name: string) => {
+      if (name === 'GEMINI_KEY') return apiKey;
+      return await getCredential(name);
+    });
+  } else {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital. Crie conteúdo persuasivo e profissional.');
+  }
 }
 
 // Função para gerar roteiros de marketing de vídeo
@@ -482,7 +523,16 @@ export async function generateVideoMarketingScript(
     '- Com call-to-action forte\n\n' +
     'Público: ' + publico + '\n' +
     'Duração: ' + duracao;
-  return generateWithFallback(prompt, 'Você é um roteirista de vídeos de marketing. Crie roteiros claros, objetivos e persuasivos.');
+  
+  // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+  if (apiKey) {
+    return generateWithFallback(prompt, 'Você é um roteirista de vídeos de marketing. Crie roteiros claros, objetivos e persuasivos.', async (name: string) => {
+      if (name === 'GEMINI_KEY') return apiKey;
+      return await getCredential(name);
+    });
+  } else {
+    return generateWithFallback(prompt, 'Você é um roteirista de vídeos de marketing. Crie roteiros claros, objetivos e persuasivos.');
+  }
 }
 
 // Função para gerar argumento de venda
@@ -498,7 +548,16 @@ export async function generateArgumentoVenda(
     '- Ter tom profissional e confiável\n' +
     '- Incluir call-to-action\n\n' +
     'Tipo: ' + tipo;
-  return generateWithFallback(prompt, 'Você é um especialista em vendas. Crie argumentos de venda convincentes e profissionais.');
+  
+  // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+  if (apiKey) {
+    return generateWithFallback(prompt, 'Você é um especialista em vendas. Crie argumentos de venda convincentes e profissionais.', async (name: string) => {
+      if (name === 'GEMINI_KEY') return apiKey;
+      return await getCredential(name);
+    });
+  } else {
+    return generateWithFallback(prompt, 'Você é um especialista em vendas. Crie argumentos de venda convincentes e profissionais.');
+  }
 }
 
 // Função para gerar título automático do vídeo
@@ -531,7 +590,15 @@ export async function generateVideoTitle(
   
   Gere apenas o título, sem aspas ou formatação extra.`;
   
-  return generateWithFallback(prompt, 'Você é um especialista em marketing digital e SEO. Crie títulos atrativos e otimizados para redes sociais.');
+  // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+  if (apiKey) {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital e SEO. Crie títulos atrativos e otimizados para redes sociais.', async (name: string) => {
+      if (name === 'GEMINI_KEY') return apiKey;
+      return await getCredential(name);
+    });
+  } else {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital e SEO. Crie títulos atrativos e otimizados para redes sociais.');
+  }
 }
 
 // Função para gerar hashtags automáticas
@@ -567,7 +634,15 @@ export async function generateVideoHashtags(
   
   Retorne apenas as hashtags separadas por espaço, sem texto adicional.`;
   
-  return generateWithFallback(prompt, 'Você é um especialista em marketing digital e redes sociais. Crie hashtags estratégicas e relevantes para o nicho materno-infantil.');
+  // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
+  if (apiKey) {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital e redes sociais. Crie hashtags estratégicas e relevantes para o nicho materno-infantil.', async (name: string) => {
+      if (name === 'GEMINI_KEY') return apiKey;
+      return await getCredential(name);
+    });
+  } else {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital e redes sociais. Crie hashtags estratégicas e relevantes para o nicho materno-infantil.');
+  }
 }
 
 export { generateWithFallback }; 

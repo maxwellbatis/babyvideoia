@@ -7,7 +7,7 @@ import { gerarImagemColabSD } from '../image/stabledefusion';
 import { generateImageFreepik } from '../image/freepik';
 import { log } from '../utils/logger';
 import { gerarNarracaoTTSGratuito } from '../tts/elevenlabs';
-import { generateSubtitles, generateSubtitlesWithAudioAnalysis } from '../subtitles/aligner';
+import { generateSubtitles, generateSubtitlesWithAudioAnalysis, useWhisperSrt, convertWhisperToProgressive, generateProgressiveSubtitlesWithAudio } from '../subtitles/aligner';
 import { getAudioDuration, normalizeAudio, verificarDuracaoAudio } from '../utils/audioUtils';
 import { getVideoStyle, applyVideoStyle } from '../video/styleVideo';
 import { gerarPromptImagem } from '../image/imagePrompt';
@@ -22,6 +22,7 @@ import {
   VideoFormat
 } from '../video/ffmpeg';
 import { getCredential } from '../utils/credentials';
+import { transcribeAudio, saveSrtFile, isValidSrt } from '../utils/whisperClient';
 
 // Função para dividir o roteiro em cenas (igual ao animated-images)
 function splitScriptIntoScenes(script: string, maxScenes = 5): string[] {
@@ -314,7 +315,9 @@ async function generateVideoWithStableDiffusion(
       // 1. Tentar Stable Diffusion primeiro
       try {
         log(`🎨 [SD] Tentando gerar imagem ${imageNum} com Stable Diffusion...`);
-        await gerarImagemColabSD(imagePrompt, imagePath);
+        await gerarImagemColabSD(imagePrompt, imagePath, { 
+          resolution: resolution as 'vertical' | 'horizontal' | 'square' 
+        });
         log(`✅ [SD] Imagem ${imageNum} gerada com Stable Diffusion: ${imagePath}`);
         imagePaths.push(imagePath);
       } catch (sdError) {
@@ -328,7 +331,7 @@ async function generateVideoWithStableDiffusion(
             imagePath,
             {
               apiKey: await getCredential('FREEPIK_API_KEY'),
-              imageSize: resolution === 'vertical' ? 'portrait' : (resolution === 'horizontal' ? 'landscape' : 'square')
+              resolution: resolution // CORRIGIDO: Passar resolution diretamente
             }
           );
           log(`✅ [FREEPIK] Imagem ${imageNum} gerada com sucesso: ${imagePath}`);
@@ -344,7 +347,9 @@ async function generateVideoWithStableDiffusion(
               focus: 'mother'
             });
             log(`🎨 [PROMPT MELHORADO] Gerando imagem ${imageNum} com prompt melhorado: ${improvedPrompt.substring(0, 100)}...`);
-            await gerarImagemColabSD(improvedPrompt, imagePath);
+            await gerarImagemColabSD(improvedPrompt, imagePath, { 
+              resolution: resolution as 'vertical' | 'horizontal' | 'square' 
+            });
             log(`✅ [PROMPT MELHORADO] Imagem ${imageNum} gerada com sucesso: ${imagePath}`);
             imagePaths.push(imagePath);
           } catch (finalError) {
@@ -431,9 +436,41 @@ async function generateVideoWithStableDiffusion(
     const videoWithAudioPath = path.join(tmpDir, `videoaudio_scene${sceneNum}.mp4`);
     addAudioToVideo(sceneConcatPath, normalizedAudioPath, videoWithAudioPath, false); // false = não usar -shortest
     // Gerar legendas com sincronização melhorada
-    const subtitles = await generateSubtitlesWithAudioAnalysis(narracao, normalizedAudioPath);
-    const subtitlesPath = path.join(tmpDir, `legenda_scene${sceneNum}.srt`);
-    fs.writeFileSync(subtitlesPath, subtitles.join('\n'));
+    let subtitles: string[];
+    let subtitlesPath: string;
+    
+    try {
+      log(`🎙️ [WHISPER] Tentando transcrição automática para legendas profissionais...`);
+      
+      // Usar Whisper para transcrição automática
+      const whisperResult = await transcribeAudio(normalizedAudioPath);
+      
+      if (isValidSrt(whisperResult.srt)) {
+        // Salvar legenda SRT do Whisper
+        subtitlesPath = path.join(tmpDir, `legenda_whisper_scene${sceneNum}.srt`);
+        saveSrtFile(whisperResult.srt, subtitlesPath);
+        
+        // [NOVO] Usar SRT do Whisper convertido para legendas progressivas
+        subtitles = convertWhisperToProgressive(whisperResult.srt, 'word'); // 'word' = palavra por palavra, 'phrase' = frase por frase
+        
+        log(`✅ [WHISPER] Legendas progressivas geradas: ${subtitles.length} blocos`);
+        log(`📝 [WHISPER] Texto transcrito: "${whisperResult.text.substring(0, 100)}..."`);
+        log(`⏱️ [WHISPER] Usando legendas progressivas (palavra por palavra)`);
+      } else {
+        throw new Error('SRT inválido retornado pelo Whisper');
+      }
+      
+    } catch (whisperError) {
+      log(`❌ [WHISPER] Falha na transcrição automática: ${whisperError}`);
+      log(`🔄 [FALLBACK] Usando geração manual de legendas...`);
+      
+      // Fallback: usar método anterior de geração de legendas progressivas
+      subtitles = await generateProgressiveSubtitlesWithAudio(narracao, normalizedAudioPath, 'word');
+      subtitlesPath = path.join(tmpDir, `legenda_manual_scene${sceneNum}.srt`);
+      fs.writeFileSync(subtitlesPath, subtitles.join('\n'));
+      
+      log(`✅ [FALLBACK] Legendas progressivas manuais geradas: ${subtitles.length} blocos`);
+    }
     let videoWithSubtitlesPath: string;
     if (!fs.existsSync(subtitlesPath)) {
       videoWithSubtitlesPath = path.join(tmpDir, `legendado_scene${sceneNum}.mp4`);

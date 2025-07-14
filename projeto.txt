@@ -1,0 +1,153 @@
+📋 Visão Geral do Projeto
+Seu projeto é um pipeline completo de geração de vídeos verticais para redes sociais, focado em conteúdo de maternidade e cuidados com bebês. O sistema usa IA para gerar roteiros, imagens, áudio e montar vídeos automaticamente.
+🏗️ Arquitetura do Sistema
+1. Estrutura de Pastas
+Apply to aligner.ts
+🎯 Componentes Principais
+1. Geração de Roteiros (src/text/)
+gemini-groq.ts - Motor de IA Principal
+Apply to aligner.ts
+Funcionalidades:
+✅ Fallback Inteligente: Gemini → Groq → Local
+✅ Roteiros Estruturados: JSON com narração + descrições visuais
+✅ Contexto Específico: Maternidade, bebês, cuidados
+✅ Variações Automáticas: 3 descrições visuais diferentes por cena
+gemini.ts - Versão Original
+Mantida para compatibilidade
+Geração de posts, hashtags, títulos
+2. Geração de Imagens (src/image/)
+stabledefusion.ts - Stable Diffusion
+Apply to aligner.ts
+Características:
+🎨 Tradução Automática: PT → EN para melhor qualidade
+�� Formatos Múltiplos: Vertical (9:16), Horizontal (16:9), Quadrado
+�� Configurações Otimizadas: 60 steps, prompt negativo realista
+🌐 API Externa: Google Colab para processamento
+freepik.ts - Freepik AI
+Apply to aligner.ts
+Melhorias Recentes:
+✅ Endpoint Corrigido: /flux-dev para imagens verticais
+✅ Aspect Ratio: social_story_9_16 para stories
+✅ Fallback Robusto: Polling com timeout
+imagePrompt.ts - Otimização de Prompts
+Apply to aligner.ts
+Configurações:
+🎭 Estilos: Realistic, Illustration, Photographic
+😊 Humor: Warm, Calm, Joyful, Tender
+🎯 Foco: Mother, Baby, Family, Care
+3. Text-to-Speech (src/tts/)
+elevenlabs.ts - Narração Profissional
+Apply to aligner.ts
+Recursos:
+🎙️ Voz Natural: ElevenLabs para qualidade profissional
+🔊 Normalização: Loudnorm para volume consistente
+⏱️ Sincronização: Duração calculada automaticamente
+�� Fallback: gTTS se ElevenLabs falhar
+4. Sincronização de Legendas (src/subtitles/)
+aligner.ts - Sistema Avançado de Legendas
+Apply to aligner.ts
+Melhorias Recentes:
+🎙️ Whisper Integration: Transcrição automática com timestamps precisos
+🔍 Detecção de Silêncio: -25dB, 0.8s para pausas naturais
+⏱️ Fallback Inteligente: Análise manual quando Whisper falha
+📊 Filtros Avançados: Silêncios entre 0.5s e 3.0s
+5. Orquestradores (src/orchestrators/)
+orchestrator-animated-sd.ts - Pipeline Principal
+Apply to aligner.ts
+Fluxo Completo:
+🎬 Geração de Roteiro: Gemini/Groq com contexto
+🖼️ Geração de Imagens: SD + Freepik + Imagens do App
+🎙️ Narração: ElevenLabs com normalização
+�� Legendas: Whisper + Fallback manual
+🎬 Montagem: FFmpeg com animações Ken Burns
+🎵 Música: Background music opcional
+🎨 Estilo: Call-to-action e watermark
+orchestrator-animated-images.ts - Versão Alternativa
+Similar ao SD, mas focado em imagens pré-existentes
+Suporte a imagens do app com contextualização
+6. Utilitários (src/utils/)
+whisperClient.ts - API de Transcrição
+Apply to aligner.ts
+Funcionalidades:
+🌐 API Externa: Servidor Whisper dedicado
+�� Validação SRT: Verificação de formato
+💾 Persistência: Salvamento automático de legendas
+audioUtils.ts - Processamento de Áudio
+Apply to aligner.ts
+videoMetadata.ts - Gerenciamento de Metadados
+Apply to aligner.ts
+�� Fluxo de Geração de Vídeo
+1. Entrada do Usuário
+Apply to aligner.ts
+Run
+2. Processamento Pipeline
+Fase 1: Roteiro
+Apply to aligner.ts
+Fase 2: Imagens
+Apply to aligner.ts
+Fase 3: Áudio
+Apply to aligner.ts
+Fase 4: Legendas
+Apply to aligner.ts
+Fase 5: Montagem
+Apply to aligner.ts
+🔧 Configurações e APIs
+APIs Integradas:
+🤖 Gemini: Geração de roteiros (fallback: Groq)
+🎨 Stable Diffusion: Imagens realistas (via Colab)
+🖼️ Freepik: Imagens profissionais
+��️ ElevenLabs: Narração natural
+��️ Whisper: Transcrição automática
+🎵 FFmpeg: Processamento de vídeo
+Formatos Suportados:
+📱 Vertical: 720x1280 (Stories/Reels)
+��️ Horizontal: 1280x720 (YouTube)
+⬜ Quadrado: 1024x1024 (Instagram)
+🚀 Recursos Avançados
+1. Integração com App
+📱 Imagens do App: URLs diretas para screenshots
+�� Contextualização: Narração adaptada às imagens
+�� Fallback Inteligente: IA quando app não disponível
+2. Música de Fundo
+Apply to aligner.ts
+3. Estilos de Vídeo
+🎨 Call-to-Action: "�� Baixe o Baby Diary App"
+🏷️ Watermark: "Baby Diary" no canto
+�� Animações: Ken Burns suaves
+📐 Resolução: Automática por formato
+📊 Monitoramento e Logs
+Sistema de Logs Detalhado:
+Apply to aligner.ts
+�� Casos de Uso
+1. Vídeos Educativos
+📚 Dicas de maternidade
+�� Desenvolvimento do bebê
+🥛 Amamentação e cuidados
+2. Marketing de App
+📱 Demonstração de funcionalidades
+🎯 Call-to-action para download
+📊 Métricas de engajamento
+3. Conteúdo Social
+📸 Stories para Instagram
+🎬 Reels e TikTok
+📺 YouTube Shorts
+🔮 Próximos Passos Sugeridos
+Melhorias Técnicas:
+🎨 Mais Estilos: Filtros visuais, transições
+🎵 Música IA: Geração automática de trilha sonora
+📊 Analytics: Métricas de performance dos vídeos
+🌐 Web Interface: Interface gráfica para usuários
+Funcionalidades:
+�� Múltiplas Vozes: Seleção de vozes diferentes
+🎨 Templates: Estilos pré-definidos
+📱 Batch Processing: Geração em lote
+☁️ Cloud Storage: Upload automático
+💡 Destaques do Sistema
+✅ Pipeline Completo: Do texto ao vídeo final
+✅ IA Integrada: Múltiplas APIs com fallback
+✅ Sincronização Perfeita: Legendas precisas
+✅ Formatos Múltiplos: Vertical, horizontal, quadrado
+✅ Contextualização: Integração com app
+✅ Robustez: Fallbacks em todas as etapas
+✅ Escalabilidade: Processamento paralelo
+✅ Monitoramento: Logs detalhados

@@ -34,23 +34,53 @@ export async function traduzirPromptParaIngles(promptPt: string): Promise<string
 }
 
 /**
- * Gera uma imagem vertical realista usando Stable Diffusion no Colab.
+ * Gera uma imagem realista usando Stable Diffusion no Colab.
  * @param promptPt Prompt em português
  * @param outputPath Caminho para salvar a imagem (ex: './output/imagem1.png')
+ * @param options Opções de geração (negativePrompt, resolution, width, height)
  * @returns Caminho da imagem salva
  */
-export async function gerarImagemColabSD(promptPt: string, outputPath: string, negativePrompt?: string): Promise<string> {
+export async function gerarImagemColabSD(
+  promptPt: string, 
+  outputPath: string, 
+  options: {
+    negativePrompt?: string;
+    resolution?: 'vertical' | 'horizontal' | 'square';
+    width?: number;
+    height?: number;
+  } = {}
+): Promise<string> {
   // 1. Traduzir prompt para inglês
   const promptEn = await traduzirPromptParaIngles(promptPt);
-  // 2. Montar payload
+  
+  // 2. Determinar dimensões baseado na resolução
+  let width = options.width;
+  let height = options.height;
+  
+  if (!width || !height) {
+    // Dimensões padrão baseadas na resolução
+    if (options.resolution === 'vertical') {
+      width = 576;
+      height = 1024; // Formato 9:16 para stories
+    } else if (options.resolution === 'horizontal') {
+      width = 1280;
+      height = 720; // Formato 16:9 para vídeos horizontais
+    } else {
+      width = 1024;
+      height = 1024; // Formato quadrado
+    }
+  }
+  
+  // 3. Montar payload
   const data = {
     prompt: promptEn,
-    negative_prompt: negativePrompt || NEGATIVE_PROMPT,
+    negative_prompt: options.negativePrompt || NEGATIVE_PROMPT,
     steps: 60,
-    width: 512,
-    height: 768
+    width: width,
+    height: height
   };
-  // 3. Chamar API do Colab
+  
+  // 4. Chamar API do Colab
   try {
     const colabUrl = await getColabUrl();
     const res = await axios.post(colabUrl, data, { timeout: 120000 });
@@ -58,7 +88,7 @@ export async function gerarImagemColabSD(promptPt: string, outputPath: string, n
     if (base64Image) {
       fs.mkdirSync(path.dirname(outputPath), { recursive: true });
       fs.writeFileSync(outputPath, Buffer.from(base64Image, "base64"));
-      console.log("✅ Imagem salva em", outputPath);
+      console.log(`✅ Imagem ${width}x${height} salva em ${outputPath}`);
       return outputPath;
     } else {
       throw new Error("Nenhuma imagem foi retornada pela API do Colab.");
