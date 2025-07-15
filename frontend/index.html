@@ -579,6 +579,26 @@
             font-size: 0.95rem;
         }
 
+        .video-hashtags {
+            font-size: 0.8rem;
+            color: #667eea;
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+
+        .video-caption {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 8px;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+            line-height: 1.4;
+            max-height: 80px;
+            overflow-y: auto;
+        }
+
         .video-meta {
             display: flex;
             justify-content: space-between;
@@ -614,6 +634,27 @@
             background: #f8f9fa;
             color: #666;
             border: 1px solid #e9ecef;
+        }
+
+        .video-btn.tiktok {
+            background: linear-gradient(135deg, #000000 0%, #25f4ee 50%, #fe2c55 100%);
+            color: white;
+            border: 1px solid #25f4ee;
+        }
+
+        .video-btn.tiktok:hover {
+            background: linear-gradient(135deg, #25f4ee 0%, #fe2c55 50%, #000000 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(37, 244, 238, 0.3);
+        }
+
+        .video-btn.tiktok.posted {
+            background: #28a745;
+            border-color: #28a745;
+        }
+
+        .video-btn.tiktok.posted:hover {
+            background: #218838;
         }
 
         .video-btn:hover {
@@ -1751,6 +1792,13 @@
                         <small style="color: #666;">Ex: #Maternidade #BabyDiary #DicasParaMães</small>
                     </div>
                     <div class="form-group">
+                        <label>Legenda do Instagram:</label>
+                        <div id="editVideoCaption" style="background: #f8f9fa; padding: 12px; border-radius: 6px; border-left: 3px solid #667eea; font-size: 0.9rem; line-height: 1.4; max-height: 120px; overflow-y: auto; color: #666;">
+                            <em>Legenda será exibida aqui...</em>
+                        </div>
+                        <small style="color: #666;">Legenda gerada automaticamente pela IA</small>
+                    </div>
+                    <div class="form-group">
                         <label>Informações do Vídeo:</label>
                         <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; font-size: 0.9rem;">
                             <div style="margin-bottom: 8px;">
@@ -2557,6 +2605,31 @@
         let currentVideoPage = 1;
         const videosPerPage = 6;
 
+        // Função para verificar status do TikTok para múltiplos vídeos
+        async function checkTikTokStatusForVideos(videos) {
+            for (const video of videos) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/tiktok/status/${video.id}`);
+                    const data = await response.json();
+                    
+                    if (data.success && data.tiktokPosted) {
+                        const tiktokBtn = document.getElementById(`tiktok-btn-${video.id}`);
+                        if (tiktokBtn) {
+                            tiktokBtn.innerHTML = '<i class="fas fa-check"></i> Postado';
+                            tiktokBtn.classList.add('posted');
+                            tiktokBtn.onclick = () => {
+                                if (data.tiktokUrl) {
+                                    window.open(data.tiktokUrl, '_blank');
+                                }
+                            };
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Erro ao verificar status do TikTok para vídeo ${video.id}:`, error);
+                }
+            }
+        }
+
         async function loadVideoGallery(page = 1) {
             const gallery = document.getElementById('videoGallery');
             gallery.innerHTML = `
@@ -2615,6 +2688,9 @@
                     // Usar inserção segura de HTML
                     safeInsertHTML(gallery, galleryHTML);
                     currentVideoPage = page;
+                    
+                    // Verificar status do TikTok para todos os vídeos
+                    await checkTikTokStatusForVideos(videosToShow);
                 } else {
                     gallery.innerHTML = `
                         <div class="empty-gallery">
@@ -2957,6 +3033,7 @@
                     <div class="video-info">
                         <div class="video-title">${safeTitulo}</div>
                         <div class="video-hashtags">${safeHashtags}</div>
+                        ${video.caption ? `<div class="video-caption">${escapeHTML(video.caption)}</div>` : ''}
                     </div>
                     <div class="video-actions">
                         <button class="video-btn primary" onclick="downloadVideoFromGallery('${encVideoUrl}', '${encTitulo}')">
@@ -2967,6 +3044,9 @@
                         </button>
                         <button class="video-btn secondary" onclick="editVideoMetadata('${encId}', '${encTitulo}', '${encHashtags}')">
                             <i class="fas fa-edit"></i> Editar
+                        </button>
+                        <button class="video-btn tiktok" onclick="postToTikTok('${encId}', '${encTitulo}')" id="tiktok-btn-${encId}">
+                            <i class="fab fa-tiktok"></i> TikTok
                         </button>
                         <button class="video-btn danger" onclick="deleteVideo('${encId}', '${encTitulo}')">
                             <i class="fas fa-trash"></i> Excluir
@@ -3176,6 +3256,14 @@
                         document.getElementById('editVideoTitle').value = video.titulo || titulo;
                         document.getElementById('editVideoHashtags').value = video.hashtags || hashtags;
                         
+                        // Preencher legenda
+                        const captionElement = document.getElementById('editVideoCaption');
+                        if (video.caption) {
+                            captionElement.textContent = video.caption;
+                        } else {
+                            captionElement.innerHTML = '<em>Nenhuma legenda disponível</em>';
+                        }
+                        
                         // Preencher informações do vídeo
                         document.getElementById('editVideoTema').textContent = video.tema || 'N/A';
                         document.getElementById('editVideoTipo').textContent = video.tipo || 'N/A';
@@ -3232,6 +3320,85 @@
                 }
             } catch (error) {
                 showNotification('Erro ao atualizar metadados', 'error');
+            }
+        }
+
+        async function postToTikTok(videoId, videoTitle) {
+            videoId = decodeURIComponent(videoId);
+            videoTitle = decodeURIComponent(videoTitle);
+            console.log('🎯 CLIQUE NO BOTÃO TIKTOK - id:', videoId, 'title:', videoTitle);
+            
+            // Verificar se já foi postado
+            try {
+                const statusResponse = await fetch(`${API_BASE_URL}/tiktok/status/${videoId}`);
+                const statusData = await statusResponse.json();
+                
+                if (statusData.success && statusData.tiktokPosted) {
+                    showNotification('Vídeo já foi postado no TikTok!', 'info');
+                    if (statusData.tiktokUrl) {
+                        window.open(statusData.tiktokUrl, '_blank');
+                    }
+                    return;
+                }
+            } catch (error) {
+                console.error('Erro ao verificar status do TikTok:', error);
+            }
+            
+            // Solicitar access token do TikTok
+            const accessToken = prompt('Digite seu Access Token do TikTok:');
+            if (!accessToken) {
+                showNotification('Access Token é obrigatório para postar no TikTok', 'error');
+                return;
+            }
+            
+            // Opcional: permitir editar a legenda
+            const customCaption = prompt('Legenda para o TikTok (deixe vazio para usar a padrão):');
+            
+            try {
+                showNotification('Postando no TikTok...', 'info');
+                
+                const response = await fetch(`${API_BASE_URL}/tiktok/upload/${videoId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        accessToken: accessToken,
+                        customCaption: customCaption || null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification('Vídeo postado no TikTok com sucesso!', 'success');
+                    
+                    // Atualizar botão para mostrar que foi postado
+                    const tiktokBtn = document.getElementById(`tiktok-btn-${videoId}`);
+                    if (tiktokBtn) {
+                        tiktokBtn.innerHTML = '<i class="fas fa-check"></i> Postado';
+                        tiktokBtn.classList.add('posted');
+                        tiktokBtn.onclick = () => {
+                            if (data.tiktokUrl) {
+                                window.open(data.tiktokUrl, '_blank');
+                            }
+                        };
+                    }
+                    
+                    // Abrir o vídeo no TikTok se a URL estiver disponível
+                    if (data.tiktokUrl) {
+                        setTimeout(() => {
+                            if (confirm('Deseja abrir o vídeo no TikTok?')) {
+                                window.open(data.tiktokUrl, '_blank');
+                            }
+                        }, 1000);
+                    }
+                } else {
+                    showNotification(data.error || 'Erro ao postar no TikTok', 'error');
+                }
+            } catch (error) {
+                console.error('Erro ao postar no TikTok:', error);
+                showNotification('Erro ao postar no TikTok: ' + error.message, 'error');
             }
         }
 

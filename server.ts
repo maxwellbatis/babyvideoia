@@ -1770,6 +1770,223 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// ===== INTEGRAÇÃO COM TIKTOK =====
+
+// Função para baixar vídeo do Cloudinary para buffer
+async function downloadVideoToBuffer(cloudinaryUrl: string): Promise<Buffer> {
+  try {
+    console.log(`📥 Baixando vídeo do Cloudinary: ${cloudinaryUrl}`);
+    const response = await axios.get(cloudinaryUrl, { 
+      responseType: 'arraybuffer',
+      timeout: 30000 // 30 segundos timeout
+    });
+    
+    const buffer = Buffer.from(response.data);
+    console.log(`✅ Vídeo baixado: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
+    return buffer;
+  } catch (error) {
+    console.error(`❌ Erro ao baixar vídeo do Cloudinary:`, error);
+    throw new Error(`Falha ao baixar vídeo: ${error.message}`);
+  }
+}
+
+// Função para fazer upload para TikTok
+async function uploadToTikTok(videoBuffer: Buffer, caption: string, accessToken: string) {
+  try {
+    console.log(`📤 Iniciando upload para TikTok...`);
+    
+    // Criar FormData com o vídeo
+    const FormData = require('form-data');
+    const form = new FormData();
+    
+    // Adicionar o vídeo como buffer
+    form.append('video', videoBuffer, { 
+      filename: 'video.mp4', 
+      contentType: 'video/mp4' 
+    });
+    
+    // Adicionar a legenda
+    if (caption) {
+      form.append('text', caption);
+    }
+    
+    // Fazer a requisição para a API do TikTok
+    const response = await axios.post(
+      'https://open.tiktokapis.com/v2/post/publish/video/upload/',
+      form,
+      {
+        headers: {
+          ...form.getHeaders(),
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 60000, // 60 segundos timeout
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity
+      }
+    );
+    
+    console.log(`✅ Upload para TikTok concluído:`, response.data);
+    return response.data;
+  } catch (error) {
+    console.error(`❌ Erro no upload para TikTok:`, error);
+    
+    if (error.response) {
+      console.error(`Status: ${error.response.status}`);
+      console.error(`Data:`, error.response.data);
+    }
+    
+    throw new Error(`Falha no upload para TikTok: ${error.message}`);
+  }
+}
+
+// Endpoint para postar vídeo no TikTok
+app.post('/api/tiktok/upload/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const { accessToken, customCaption } = req.body;
+    
+    console.log(`🎬 Iniciando upload para TikTok - Video ID: ${videoId}`);
+    
+    // Validar parâmetros
+    if (!accessToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Access token do TikTok é obrigatório'
+      });
+    }
+    
+    // Buscar vídeo no metadata
+    const videoMetadataPath = './output/video_metadata.json';
+    if (!fs.existsSync(videoMetadataPath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'Arquivo de metadados não encontrado'
+      });
+    }
+    
+    const metadataContent = fs.readFileSync(videoMetadataPath, 'utf8');
+    const metadata = JSON.parse(metadataContent);
+    const video = metadata.videos.find((v: any) => v.id === videoId);
+    
+    if (!video) {
+      return res.status(404).json({
+        success: false,
+        error: 'Vídeo não encontrado'
+      });
+    }
+    
+    // Verificar se já foi postado no TikTok
+    if (video.tiktokUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Vídeo já foi postado no TikTok',
+        tiktokUrl: video.tiktokUrl
+      });
+    }
+    
+    // Verificar se tem URL do Cloudinary
+    if (!video.cloudinaryVideoUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Vídeo não possui URL do Cloudinary'
+      });
+    }
+    
+    // Baixar vídeo do Cloudinary
+    const videoBuffer = await downloadVideoToBuffer(video.cloudinaryVideoUrl);
+    
+    // Preparar legenda
+    let caption = customCaption || video.caption || video.titulo || 'Vídeo gerado pelo Baby Diary AI';
+    
+    // Adicionar hashtags se disponível
+    if (video.hashtags) {
+      caption += `\n\n${video.hashtags}`;
+    }
+    
+    // Fazer upload para TikTok
+    const tiktokResponse = await uploadToTikTok(videoBuffer, caption, accessToken);
+    
+    // Salvar URL do TikTok no metadata
+    if (tiktokResponse.data && tiktokResponse.data.post_id) {
+      const tiktokUrl = `https://www.tiktok.com/@user/video/${tiktokResponse.data.post_id}`;
+      
+      // Atualizar metadata
+      video.tiktokUrl = tiktokUrl;
+      video.tiktokPosted = true;
+      video.tiktokPostedAt = new Date().toISOString();
+      
+      // Salvar metadata atualizado
+      fs.writeFileSync(videoMetadataPath, JSON.stringify(metadata, null, 2));
+      
+      console.log(`✅ URL do TikTok salva: ${tiktokUrl}`);
+      
+      res.json({
+        success: true,
+        message: 'Vídeo postado no TikTok com sucesso!',
+        tiktokUrl: tiktokUrl,
+        postId: tiktokResponse.data.post_id,
+        caption: caption
+      });
+    } else {
+      throw new Error('Resposta do TikTok não contém post_id');
+    }
+    
+  } catch (error: any) {
+    console.error(`❌ Erro no endpoint TikTok:`, error);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Erro interno do servidor',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Endpoint para verificar status do TikTok
+app.get('/api/tiktok/status/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    
+    const videoMetadataPath = './output/video_metadata.json';
+    if (!fs.existsSync(videoMetadataPath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'Arquivo de metadados não encontrado'
+      });
+    }
+    
+    const metadataContent = fs.readFileSync(videoMetadataPath, 'utf8');
+    const metadata = JSON.parse(metadataContent);
+    const video = metadata.videos.find((v: any) => v.id === videoId);
+    
+    if (!video) {
+      return res.status(404).json({
+        success: false,
+        error: 'Vídeo não encontrado'
+      });
+    }
+    
+    res.json({
+      success: true,
+      videoId: videoId,
+      tiktokPosted: video.tiktokPosted || false,
+      tiktokUrl: video.tiktokUrl || null,
+      tiktokPostedAt: video.tiktokPostedAt || null,
+      hasCloudinaryUrl: !!video.cloudinaryVideoUrl,
+      caption: video.caption || null
+    });
+    
+  } catch (error: any) {
+    console.error(`❌ Erro ao verificar status do TikTok:`, error);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Erro interno do servidor'
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
   console.log(`📱 Frontend disponível em http://localhost:${PORT}`);
@@ -1786,5 +2003,7 @@ app.listen(PORT, () => {
   console.log(`   DELETE /api/videos/:id`);
   console.log(`   GET  /api/thumbnails/:filename`);
   console.log(`   GET  /api/download/:file`);
+  console.log(`   POST /api/tiktok/upload/:videoId`);
+  console.log(`   GET  /api/tiktok/status/:videoId`);
   console.log(`   GET  /api/status`);
 }); 
