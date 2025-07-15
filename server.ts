@@ -849,35 +849,14 @@ app.get('/api/videos/:id', (req, res) => {
 
 // Rota para atualizar metadados do vídeo
 app.put('/api/videos/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const { titulo, hashtags } = req.body;
-    
-    const updates: any = {};
-    if (titulo) updates.titulo = titulo;
-    if (hashtags) updates.hashtags = hashtags;
-    
-    const success = videoMetadataManager.updateVideo(id, updates);
-    
-    if (!success) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Vídeo não encontrado' 
-      });
-    }
-    
-    res.json({ 
-      success: true,
-      message: 'Vídeo atualizado com sucesso'
-    });
-  } catch (error) {
-    console.error('Erro ao atualizar vídeo:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Erro ao atualizar vídeo',
-      details: error.message 
-    });
+  const { id } = req.params;
+  const { titulo, hashtags, caption } = req.body;
+
+  const success = videoMetadataManager.updateVideo(id, { titulo, hashtags, caption });
+  if (!success) {
+    return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
   }
+  res.json({ success: true, message: 'Vídeo atualizado com sucesso' });
 });
 
 // Rota para deletar vídeo
@@ -1029,6 +1008,85 @@ app.post('/api/generate-tts', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao gerar TTS' });
+  }
+});
+
+// API para buscar imagens geradas
+app.get('/api/generated-images', async (req, res) => {
+  try {
+    const { tema, tipo, publico, resolution, limit = 20 } = req.query;
+    
+    const where: any = { isReusable: true };
+    
+    if (tema) where.tema = tema as string;
+    if (tipo) where.tipo = tipo as string;
+    if (publico) where.publico = publico as string;
+    if (resolution) where.resolution = resolution as string;
+    
+    const images = await prisma.generatedImage.findMany({
+      where,
+      orderBy: [
+        { usageCount: 'desc' },
+        { performance: 'desc' },
+        { createdAt: 'desc' }
+      ],
+      take: parseInt(limit as string)
+    });
+    
+    res.json({
+      success: true,
+      images: images,
+      total: images.length
+    });
+  } catch (error) {
+    console.error('Erro ao buscar imagens geradas:', error);
+    res.status(500).json({ error: 'Erro ao buscar imagens geradas' });
+  }
+});
+
+// API para deletar imagem gerada
+app.delete('/api/generated-images/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const image = await prisma.generatedImage.findUnique({
+      where: { id: parseInt(id) }
+    });
+    
+    if (!image) {
+      return res.status(404).json({ error: 'Imagem não encontrada' });
+    }
+    
+    // Deletar do Cloudinary se existir
+    if (image.cloudinaryPublicId) {
+      try {
+        await cloudinary.uploader.destroy(image.cloudinaryPublicId);
+      } catch (cloudinaryError) {
+        console.warn('Erro ao deletar do Cloudinary:', cloudinaryError);
+      }
+    }
+    
+    // Deletar arquivo local se existir
+    if (image.localPath && fs.existsSync(image.localPath)) {
+      try {
+        fs.unlinkSync(image.localPath);
+      } catch (fileError) {
+        console.warn('Erro ao deletar arquivo local:', fileError);
+      }
+    }
+    
+    // Deletar do banco
+    await prisma.generatedImage.delete({
+      where: { id: parseInt(id) }
+    });
+    
+    res.json({
+      success: true,
+      message: 'Imagem deletada com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro ao deletar imagem:', error);
+    res.status(500).json({ error: 'Erro ao deletar imagem' });
   }
 });
 

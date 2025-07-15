@@ -4,9 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Baby Diary - Painel Criativo</title>
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         * {
@@ -1364,7 +1361,7 @@
                     <!-- [1] Adicionar campo visual para imagens selecionadas no formulário de vídeo -->
                     <div class="form-group" id="selectedAppImagesPreview" style="display: none;">
                         <label>Imagens do App Selecionadas:</label>
-                        <div id="selectedAppImagesList" style="display: flex; gap: 10px; flex-wrap;"></div>
+                        <div id="selectedAppImagesList" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
                     </div>
                     <!-- [NOVO BLOCO] Seleção de imagens do app no formulário de vídeo -->
                     <div class="form-group" id="videoAppImageSelector">
@@ -2516,11 +2513,6 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 Baby Diary AI - Interface carregada');
-            
-            // Forçar recarregamento do cache para evitar problemas
-            forceCacheReload();
-            
             loadCredenciais();
             loadVideoGallery(); // Carregar galeria automaticamente
             document.querySelectorAll('.save-cred-btn').forEach(btn => {
@@ -2612,8 +2604,7 @@
                             </div>
                         ` : ''}
                     `;
-                    // Usar inserção segura de HTML
-                    safeInsertHTML(gallery, galleryHTML);
+                    gallery.innerHTML = galleryHTML;
                     currentVideoPage = page;
                 } else {
                     gallery.innerHTML = `
@@ -2635,352 +2626,79 @@
             }
         }
 
-        // Função para escapar strings JavaScript
-        function escapeJS(str) {
-            if (!str) return '';
-            
-            // Primeiro sanitizar a string
-            let sanitized = sanitizeHTML(str);
-            
-            // Aplicar escape específico para JavaScript
-            return sanitized
-                .replace(/\\/g, '\\\\')      // Escapar barras invertidas primeiro
-                .replace(/'/g, "\\'")        // Escapar aspas simples
-                .replace(/"/g, '\\"')        // Escapar aspas duplas
-                .replace(/\n/g, ' ')         // Substituir quebras de linha por espaço
-                .replace(/\r/g, ' ')         // Substituir retornos por espaço
-                .replace(/\t/g, ' ')         // Substituir tabs por espaço
-                .replace(/\f/g, ' ')         // Substituir form feeds por espaço
-                .replace(/\v/g, ' ')         // Substituir vertical tabs por espaço
-                .replace(/\0/g, '')          // Remover null bytes
-                .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ') // Remover caracteres de controle
-                .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remover zero-width spaces
-                .replace(/[\u2060-\u2064\u206A-\u206F]/g, '') // Remover outros caracteres invisíveis
-                .replace(/\s+/g, ' ')        // Normalizar espaços múltiplos
-                .trim();                     // Remover espaços extras
-        }
-
-        // Função para escapar URLs JavaScript
-        function escapeURL(str) {
-            if (!str) return '';
-            return String(str)
-                .replace(/\\/g, '\\\\')      // Escapar barras invertidas
-                .replace(/'/g, "\\'")        // Escapar aspas simples
-                .replace(/"/g, '\\"')        // Escapar aspas duplas
-                .replace(/\n/g, '')          // Remover quebras de linha
-                .replace(/\r/g, '')          // Remover retornos
-                .replace(/\t/g, '')          // Remover tabs
-                .replace(/\f/g, '')          // Remover form feeds
-                .replace(/\v/g, '')          // Remover vertical tabs
-                .replace(/\0/g, '')          // Remover null bytes
-                .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remover caracteres de controle
-                .trim();                     // Remover espaços extras
-        }
-
-        // Função para forçar recarregamento do cache
-        function forceCacheReload() {
-            // Adicionar timestamp único para forçar recarregamento
-            const timestamp = Date.now();
-            const links = document.querySelectorAll('link[rel="stylesheet"]');
-            links.forEach(link => {
-                if (link.href.includes('style.css')) {
-                    link.href = link.href.split('?')[0] + '?v=' + timestamp;
-                }
-            });
-            
-            // Forçar recarregamento do JavaScript
-            const scripts = document.querySelectorAll('script[src]');
-            scripts.forEach(script => {
-                if (script.src.includes('script.js')) {
-                    script.src = script.src.split('?')[0] + '?v=' + timestamp;
-                }
-            });
-            
-            // Limpar cache do localStorage se necessário
-            if (localStorage.getItem('forceReload') !== timestamp.toString()) {
-                localStorage.setItem('forceReload', timestamp.toString());
-                console.log('🔄 Cache limpo, forçando recarregamento...');
-            }
-        }
-
-        // Função para limpar cache e recarregar página
-        function clearCacheAndReload() {
-            console.log('🧹 Limpando cache e recarregando...');
-            
-            // Limpar localStorage
-            localStorage.clear();
-            
-            // Limpar sessionStorage
-            sessionStorage.clear();
-            
-            // Forçar recarregamento sem cache
-            window.location.reload(true);
-        }
-
-        // Função para forçar recarregamento com cache limpo
-        function forceHardReload() {
-            console.log('🔄 Forçando recarregamento completo...');
-            
-            // Limpar todos os caches
-            if ('caches' in window) {
-                caches.keys().then(names => {
-                    names.forEach(name => {
-                        caches.delete(name);
-                    });
-                });
-            }
-            
-            // Limpar storage
-            localStorage.clear();
-            sessionStorage.clear();
-            
-            // Forçar recarregamento sem cache
-            window.location.href = window.location.href + '?v=' + Date.now();
-        }
-
-        // Função para limpeza completa e recarregamento
-        function nuclearReload() {
-            console.log('☢️ LIMPEZA NUCLEAR - Recarregando tudo...');
-            
-            // Limpar tudo
-            localStorage.clear();
-            sessionStorage.clear();
-            
-            // Limpar caches
-            if ('caches' in window) {
-                caches.keys().then(names => {
-                    names.forEach(name => caches.delete(name));
-                });
-            }
-            
-            // Limpar service workers
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(registrations => {
-                    registrations.forEach(registration => registration.unregister());
-                });
-            }
-            
-            // Forçar recarregamento com timestamp único
-            const timestamp = Date.now();
-            const url = new URL(window.location.href);
-            url.searchParams.set('v', timestamp);
-            url.searchParams.set('clean', 'true');
-            
-            window.location.href = url.toString();
-        }
-
-        // Função para sanitizar HTML completamente
-        function sanitizeHTML(str) {
-            if (!str) return '';
-            
-            // Converter para string e remover caracteres problemáticos
-            let sanitized = String(str)
-                .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remover caracteres de controle
-                .replace(/[\u2028\u2029]/g, '') // Remover separadores de linha Unicode
-                .replace(/\0/g, '') // Remover null bytes
-                .replace(/[\uFFFD]/g, '') // Remover replacement characters
-                .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remover zero-width spaces
-                .replace(/[\u2060-\u2064\u206A-\u206F]/g, '') // Remover outros caracteres invisíveis
-                .replace(/[\u0080-\u009F]/g, '') // Remover caracteres de controle estendidos
-                .replace(/[\u00A0-\u00FF]/g, function(match) {
-                    // Manter apenas caracteres latinos básicos
-                    return /[a-zA-Z0-9\s\-_.,!?()]/g.test(match) ? match : '';
-                })
-                .trim();
-            
-            // Se ficou vazio após sanitização, retornar string padrão
-            return sanitized || 'Vídeo';
-        }
-
-        // Função para sanitização ultra-agressiva
-        function ultraSanitize(str) {
-            if (!str) return '';
-            
-            // Converter para string e manter apenas caracteres ASCII seguros
-            let sanitized = String(str)
-                .split('')
-                .map(char => {
-                    const code = char.charCodeAt(0);
-                    // Manter apenas caracteres ASCII seguros (32-126)
-                    if (code >= 32 && code <= 126) {
-                        return char;
-                    }
-                    // Substituir caracteres problemáticos por espaços
-                    return ' ';
-                })
-                .join('')
-                .replace(/\s+/g, ' ') // Normalizar espaços
-                .trim();
-            
-            return sanitized || 'Video';
-        }
-
-        // Função para detectar caracteres problemáticos
-        function detectProblematicChars(str) {
-            if (!str) return [];
-            
-            const problematic = [];
-            for (let i = 0; i < str.length; i++) {
-                const char = str[i];
-                const code = str.charCodeAt(i);
-                
-                // Verificar caracteres que podem causar problemas
-                if (code < 32 || code > 126) {
-                    problematic.push({
-                        char: char,
-                        code: code,
-                        position: i
-                    });
-                }
-            }
-            
-            return problematic;
-        }
-
-        // Função para validar e corrigir HTML antes de inserir no DOM
-        function validateAndInsertHTML(container, html) {
-            try {
-                // Sanitizar o HTML antes de processar
-                let sanitizedHTML = html;
-                
-                // Remover caracteres problemáticos do HTML
-                sanitizedHTML = sanitizedHTML.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
-                sanitizedHTML = sanitizedHTML.replace(/[\u2028\u2029]/g, '');
-                sanitizedHTML = sanitizedHTML.replace(/[\u200B-\u200D\uFEFF]/g, '');
-                
-                // Criar um elemento temporário para validar o HTML
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = sanitizedHTML;
-                
-                // Verificar se há erros de sintaxe
-                const scripts = tempDiv.querySelectorAll('script');
-                scripts.forEach(script => {
-                    try {
-                        // Tentar avaliar o script para verificar sintaxe
-                        new Function(script.textContent);
-                    } catch (e) {
-                        console.error('❌ Erro de sintaxe JavaScript detectado:', e);
-                        // Remover o script problemático
-                        script.remove();
-                    }
-                });
-                
-                // Inserir o HTML validado
-                container.innerHTML = tempDiv.innerHTML;
-                
-            } catch (error) {
-                console.error('❌ Erro ao validar HTML:', error);
-                // Fallback: inserir HTML simples
-                container.innerHTML = '<div class="error">Erro ao carregar conteúdo</div>';
-            }
-        }
-
-        // Função para inserir HTML de forma segura
-        function safeInsertHTML(container, html) {
-            try {
-                // Usar DOMPurify se disponível, senão usar sanitização manual
-                if (typeof DOMPurify !== 'undefined') {
-                    container.innerHTML = DOMPurify.sanitize(html);
-                } else {
-                    // Sanitização manual
-                    const sanitized = html
-                        .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
-                        .replace(/[\u2028\u2029]/g, '')
-                        .replace(/[\u200B-\u200D\uFEFF]/g, '')
-                        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-                    
-                    container.innerHTML = sanitized;
-                }
-            } catch (error) {
-                console.error('❌ Erro ao inserir HTML:', error);
-                container.innerHTML = '<div class="error">Erro ao carregar conteúdo</div>';
-            }
-        }
-
-        // Função para escapar HTML (preserva acentos)
-        function escapeHTML(str) {
-            return String(str)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
         function createVideoCard(video) {
-            // Exibir texto com escapeHTML (preserva acentos)
-            const safeTitulo = escapeHTML(video.titulo || 'Vídeo');
-            const safeHashtags = escapeHTML(video.hashtags || '');
-            const safeId = escapeHTML(video.id || 'video');
-
-            // Corrigir caminho do thumbnail
-            let safeThumbnailUrl = '';
-            if (video.cloudinaryThumbnailUrl) {
-                safeThumbnailUrl = escapeHTML(video.cloudinaryThumbnailUrl);
-            } else if (video.thumbnailPath) {
-                const thumbFileName = video.thumbnailPath.split(/[\\/]/).pop();
-                safeThumbnailUrl = escapeHTML(`${API_BASE_URL}/thumbnails/${thumbFileName}`);
-            }
-
-            // Corrigir caminho do vídeo
-            let safeVideoUrl = '';
+            // Usar URL do Cloudinary se disponível, senão usar local
+            let videoUrl;
             if (video.cloudinaryVideoUrl || video.cloudinaryUrl) {
-                safeVideoUrl = escapeHTML(video.cloudinaryVideoUrl || video.cloudinaryUrl);
-            } else if (video.videoPath) {
-                const videoFileName = video.videoPath.split(/[\\/]/).pop();
+                videoUrl = video.cloudinaryVideoUrl || video.cloudinaryUrl;
+            } else {
+                // Fallback para arquivo local
+                const videoFileName = video.videoPath ? video.videoPath.split(/[\\/]/).pop() : video.name || 'video.mp4';
                 const videoTs = video.updatedAt || video.createdAt || Date.now();
-                safeVideoUrl = escapeHTML(`${API_BASE_URL}/download/${videoFileName}?ts=${videoTs}`);
+                videoUrl = `${API_BASE_URL}/download/${videoFileName}?ts=${videoTs}`;
             }
-
-            // Passar para atributos JS/HTML usando encodeURIComponent
-            const encTitulo = encodeURIComponent(video.titulo || 'Vídeo');
-            const encHashtags = encodeURIComponent(video.hashtags || '');
-            const encId = encodeURIComponent(video.id || 'video');
-            const encVideoUrl = encodeURIComponent(safeVideoUrl);
-            const encThumbnailUrl = encodeURIComponent(safeThumbnailUrl);
-
-            // Debug
-            console.log('🔍 DEBUG - Título original:', video.titulo);
-            console.log('🔍 DEBUG - Título seguro:', safeTitulo);
-            console.log('🔍 DEBUG - Título encoded:', encTitulo);
-            console.log('🔍 DEBUG - Thumbnail URL:', safeThumbnailUrl);
-            console.log('🔍 DEBUG - Video URL:', safeVideoUrl);
-
+            
+            // Usar URL do thumbnail do Cloudinary se disponível, senão usar local
+            let thumbnailUrl = null;
+            if (video.cloudinaryThumbnailUrl) {
+                thumbnailUrl = video.cloudinaryThumbnailUrl;
+            } else if (video.thumbnailPath) {
+                // Fallback para arquivo local
+                const thumbFileName = video.thumbnailPath.split(/[\\/]/).pop();
+                const thumbTs = video.updatedAt || video.createdAt || Date.now();
+                thumbnailUrl = `${API_BASE_URL}/thumbnails/${thumbFileName}?ts=${thumbTs}`;
+            }
+            
+            const createdAt = new Date(video.createdAt).toLocaleDateString('pt-BR');
+            const sizeMB = video.tamanho ? (video.tamanho / (1024 * 1024)).toFixed(1) : '0.0';
+            
             return `
-                <div class="video-card">
+                <div class="video-card" onclick="openVideoModal('${videoUrl}', '${video.id || 'video'}', '${video.titulo || 'Vídeo'}')">
                     <div class="video-thumbnail">
-                        ${safeThumbnailUrl ? `<img src="${safeThumbnailUrl}" alt="Thumbnail" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` : `<i class="fas fa-play"></i>`}
-                        <div class="video-overlay" style="${safeThumbnailUrl ? 'display: none;' : 'display: flex;'}">
+                        ${thumbnailUrl ? 
+                            `<img src="${thumbnailUrl}" alt="Thumbnail" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` : 
+                            `<i class="fas fa-play"></i>`
+                        }
+                        <div class="video-overlay" style="${thumbnailUrl ? 'display: none;' : 'display: flex;'}">
                             <i class="fas fa-play-circle"></i>
                         </div>
                     </div>
                     <div class="video-info">
-                        <div class="video-title">${safeTitulo}</div>
-                        <div class="video-hashtags">${safeHashtags}</div>
-                    </div>
-                    <div class="video-actions">
-                        <button class="video-btn primary" onclick="downloadVideoFromGallery('${encVideoUrl}', '${encTitulo}')">
-                            <i class="fas fa-download"></i> Baixar
-                        </button>
-                        <button class="video-btn secondary" onclick="openVideoModal('${encVideoUrl}', '${encId}', '${encTitulo}')">
-                            <i class="fas fa-play"></i> Assistir
-                        </button>
-                        <button class="video-btn secondary" onclick="editVideoMetadata('${encId}', '${encTitulo}', '${encHashtags}')">
-                            <i class="fas fa-edit"></i> Editar
-                        </button>
-                        <button class="video-btn danger" onclick="deleteVideo('${encId}', '${encTitulo}')">
-                            <i class="fas fa-trash"></i> Excluir
-                        </button>
+                        <div class="video-title" title="${video.titulo || 'Vídeo'}">
+                            ${video.titulo || 'Vídeo'}
+                        </div>
+                        <div class="video-hashtags" style="font-size: 0.8rem; color: #667eea; margin: 5px 0; line-height: 1.3;">
+                            ${video.hashtags || ''}
+                        </div>
+                        <div class="video-meta">
+                            <span><i class="fas fa-hdd"></i> ${sizeMB} MB</span>
+                            <span><i class="fas fa-calendar"></i> ${createdAt}</span>
+                            ${(video.cloudinaryVideoUrl || video.cloudinaryUrl) ? '<span><i class="fas fa-cloud"></i> Cloudinary</span>' : ''}
+                        </div>
+                        <div class="video-details" style="font-size: 0.75rem; color: #888; margin: 5px 0;">
+                            <span><i class="fas fa-tag"></i> ${video.tipo || 'N/A'}</span>
+                            <span><i class="fas fa-users"></i> ${video.publico || 'N/A'}</span>
+                        </div>
+                        <div class="video-actions">
+                            <button class="video-btn primary" onclick="event.stopPropagation(); downloadVideoFromGallery('${videoUrl}', '${video.titulo || 'Vídeo'}')">
+                                <i class="fas fa-download"></i> Baixar
+                            </button>
+                            <button class="video-btn secondary" onclick="event.stopPropagation(); openVideoModal('${videoUrl}', '${video.id || 'video'}', '${video.titulo || 'Vídeo'}')">
+                                <i class="fas fa-play"></i> Assistir
+                            </button>
+                            <button class="video-btn secondary" onclick="event.stopPropagation(); editVideoMetadata('${video.id || 'video'}', '${video.titulo || 'Vídeo'}', '${video.hashtags || ''}')">
+                                <i class="fas fa-edit"></i> Editar
+                            </button>
+                            <button class="video-btn secondary" onclick="event.stopPropagation(); deleteVideo('${video.id || 'video'}', '${video.titulo || 'Vídeo'}')" style="background: #dc3545; color: white;">
+                                <i class="fas fa-trash"></i> Deletar
+                            </button>
+                        </div>
                     </div>
                 </div>
             `;
         }
 
-        function openVideoModal(encVideoUrl, encId, encTitulo) {
-            const videoUrl = decodeURIComponent(encVideoUrl);
-            const id = decodeURIComponent(encId);
-            const titulo = decodeURIComponent(encTitulo);
-            console.log('🎯 CLIQUE NO BOTÃO ASSISTIR - URL:', videoUrl, 'id:', id, 'title:', titulo);
+        function openVideoModal(videoUrl, videoId, videoTitle) {
             const modal = document.getElementById('videoModal');
             const videoSource = document.getElementById('videoModalSource');
             const videoPlayer = document.getElementById('videoModalPlayer');
@@ -3004,7 +2722,7 @@
             // Configurar o vídeo
             videoSource.src = finalUrl;
             videoPlayer.load();
-            videoTitleElement.textContent = titulo;
+            videoTitleElement.textContent = videoTitle;
 
             // Abrir modal
             modal.style.display = 'block';
@@ -3038,13 +2756,10 @@
             }
         }
 
-        async function downloadVideoFromGallery(encVideoUrl, encTitulo) {
-            const videoUrl = decodeURIComponent(encVideoUrl);
-            const titulo = decodeURIComponent(encTitulo);
-            console.log('🎯 CLIQUE NO BOTÃO BAIXAR - URL:', videoUrl, 'title:', titulo);
+        async function downloadVideoFromGallery(videoUrl, videoTitle) {
             try {
                 // Limpar o título para usar como nome do arquivo
-                const cleanTitle = titulo.replace(/[^a-zA-Z0-9\s\-_]/g, '').trim();
+                const cleanTitle = videoTitle.replace(/[^a-zA-Z0-9\s\-_]/g, '').trim();
                 const fileName = cleanTitle || 'video';
                 
                 // Se é URL do Cloudinary, usar fetch para baixar o arquivo
@@ -3159,13 +2874,9 @@
         }
 
         // Função para abrir modal de edição
-        function editVideoMetadata(encId, encTitulo, encHashtags) {
-            const id = decodeURIComponent(encId);
-            const titulo = decodeURIComponent(encTitulo);
-            const hashtags = decodeURIComponent(encHashtags);
-            console.log('🎯 CLIQUE NO BOTÃO EDITAR - videoId:', id, 'title:', titulo, 'hashtags:', hashtags);
+        function editVideoMetadata(videoId, currentTitle, currentHashtags) {
             // Buscar dados completos do vídeo
-            fetch(`${API_BASE_URL}/videos/${id}`)
+            fetch(`${API_BASE_URL}/videos/${videoId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success && data.video) {
@@ -3173,8 +2884,8 @@
                         
                         // Preencher formulário
                         document.getElementById('editVideoId').value = video.id;
-                        document.getElementById('editVideoTitle').value = video.titulo || titulo;
-                        document.getElementById('editVideoHashtags').value = video.hashtags || hashtags;
+                        document.getElementById('editVideoTitle').value = video.titulo || currentTitle;
+                        document.getElementById('editVideoHashtags').value = video.hashtags || currentHashtags;
                         
                         // Preencher informações do vídeo
                         document.getElementById('editVideoTema').textContent = video.tema || 'N/A';
@@ -3236,9 +2947,6 @@
         }
 
         async function deleteVideo(videoId, videoTitle) {
-            videoId = decodeURIComponent(videoId);
-            videoTitle = decodeURIComponent(videoTitle);
-            console.log('🎯 CLIQUE NO BOTÃO DELETAR - id:', videoId, 'title:', videoTitle);
             if (!confirm(`Tem certeza que deseja deletar o vídeo "${videoTitle}"? Esta ação não pode ser desfeita.`)) {
                 return;
             }
@@ -3315,19 +3023,9 @@
             // Mostrar informações do tipo de vídeo ao carregar
             showTipoInfo();
             
-                    // Carregar galerias
-        loadVideoGallery();
-        loadAppImageGallery();
-        
-        // Forçar recarregamento do cache
-        console.log('🔄 Forçando recarregamento do cache...');
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                for(let registration of registrations) {
-                    registration.unregister();
-                }
-            });
-        }
+            // Carregar galerias
+            loadVideoGallery();
+            loadAppImageGallery();
         });
 
         // Função para mostrar informações do tipo de vídeo selecionado

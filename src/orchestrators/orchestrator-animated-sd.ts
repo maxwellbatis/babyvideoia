@@ -23,6 +23,7 @@ import {
 } from '../video/ffmpeg';
 import { getCredential } from '../utils/credentials';
 import { transcribeAudio, saveSrtFile, isValidSrt } from '../utils/whisperClient';
+import { GeneratedImageManager } from '../utils/generatedImageManager';
 
 // Função para dividir o roteiro em cenas (igual ao animated-images)
 function splitScriptIntoScenes(script: string, maxScenes = 5): string[] {
@@ -126,6 +127,7 @@ async function generateVideoWithStableDiffusion(
   log('--- FIM DO SCRIPT BRUTO ---');
   // Extrair cenas do JSON
   let cenasJson: any[] = [];
+  let caption = '';
   try {
     let cleanScript = script;
     if (script.includes('```json')) {
@@ -157,6 +159,11 @@ async function generateVideoWithStableDiffusion(
       })).filter(cena => cena.narracao.length > 5);
       log(`--- ARRAY DE CENAS EXTRAÍDO DO JSON (${cenasJson.length}) ---`);
       log(JSON.stringify(cenasJson, null, 2));
+      // Extrair legenda do Instagram se existir
+      if (typeof json.caption === 'string') {
+        caption = json.caption.trim();
+        log(`📝 Legenda do Instagram extraída: ${caption}`);
+      }
     } else {
       throw new Error('Campo "cenas" não é um array');
     }
@@ -236,6 +243,55 @@ async function generateVideoWithStableDiffusion(
     for (let j = 0; j < imagensPorCena; j++) {
       const imageNum = j + 1;
       const imagePath = path.join(tmpDir, `scene${sceneNum}_img${imageNum}.png`);
+      
+      // [INTELIGENTE] Primeiro, tentar buscar imagem existente no banco
+      let existingImage = null;
+      try {
+        existingImage = await GeneratedImageManager.findBestImageForScene(
+          narracao,
+          tema,
+          tipo,
+          publico,
+          resolution,
+          imageNum
+        );
+        
+        if (existingImage) {
+          log(`🔄 [BANCO] Imagem encontrada no banco (ID: ${existingImage.id}) para cena ${sceneNum}, imagem ${imageNum}`);
+          
+          // Se a imagem tem URL do Cloudinary, baixar
+          if (existingImage.cloudinaryUrl) {
+            try {
+              const response = await fetch(existingImage.cloudinaryUrl);
+              if (response.ok) {
+                const buffer = await response.arrayBuffer();
+                fs.writeFileSync(imagePath, Buffer.from(buffer));
+                log(`✅ [BANCO] Imagem reutilizada do Cloudinary: ${imagePath}`);
+                imagePaths.push(imagePath);
+                
+                // Incrementar contador de uso
+                await GeneratedImageManager.incrementUsage(existingImage.id);
+                continue; // Pular para próxima imagem
+              }
+            } catch (downloadError) {
+              log(`❌ [BANCO] Erro ao baixar imagem do Cloudinary: ${downloadError}`);
+            }
+          }
+          
+          // Se tem caminho local e arquivo existe, copiar
+          if (existingImage.localPath && fs.existsSync(existingImage.localPath)) {
+            fs.copyFileSync(existingImage.localPath, imagePath);
+            log(`✅ [BANCO] Imagem reutilizada do arquivo local: ${imagePath}`);
+            imagePaths.push(imagePath);
+            
+            // Incrementar contador de uso
+            await GeneratedImageManager.incrementUsage(existingImage.id);
+            continue; // Pular para próxima imagem
+          }
+        }
+      } catch (dbError) {
+        log(`❌ [BANCO] Erro ao buscar imagem no banco: ${dbError}`);
+      }
       
       // [NOVO] Se há imagem do app para esta cena, usar ela
       if (appImageUrl && j === 0) { // Usar imagem do app apenas na primeira imagem da cena
@@ -340,6 +396,31 @@ async function generateVideoWithStableDiffusion(
         log(`✅ [SD] Imagem ${imageNum} gerada com Stable Diffusion: ${imagePath}`);
         log(`🖼️ [RESULTADO] Cena ${sceneNum} - Imagem ${imageNum}: Stable Diffusion - ${imagePath}`);
         imagePaths.push(imagePath);
+        
+        // [BANCO] Salvar imagem gerada no banco de dados
+        try {
+          const tags = GeneratedImageManager.generateTags(narracao, tema, tipo);
+          const imageData = {
+            filename: path.basename(imagePath),
+            prompt: imagePrompt,
+            sceneDescription: narracao,
+            sceneNumber: sceneNum,
+            imageNumber: imageNum,
+            generationMethod: 'stable-diffusion',
+            resolution: resolution,
+            tema: tema,
+            tipo: tipo,
+            publico: publico,
+            tags: tags,
+            localPath: imagePath,
+            size: fs.statSync(imagePath).size
+          };
+          
+          const imageId = await GeneratedImageManager.saveGeneratedImage(imageData);
+          log(`💾 [BANCO] Imagem salva no banco com ID: ${imageId}`);
+        } catch (saveError) {
+          log(`❌ [BANCO] Erro ao salvar imagem no banco: ${saveError}`);
+        }
       } catch (sdError) {
         log(`❌ [SD] Stable Diffusion falhou para imagem ${imageNum}: ${sdError}`);
         log(`🔄 Tentando Freepik como fallback para imagem ${imageNum}...`);
@@ -357,6 +438,31 @@ async function generateVideoWithStableDiffusion(
           log(`✅ [FREEPIK] Imagem ${imageNum} gerada com sucesso: ${imagePath}`);
           log(`🖼️ [RESULTADO] Cena ${sceneNum} - Imagem ${imageNum}: Freepik - ${imagePath}`);
           imagePaths.push(imagePath);
+          
+          // [BANCO] Salvar imagem gerada no banco de dados
+          try {
+            const tags = GeneratedImageManager.generateTags(narracao, tema, tipo);
+            const imageData = {
+              filename: path.basename(imagePath),
+              prompt: imagePrompt,
+              sceneDescription: narracao,
+              sceneNumber: sceneNum,
+              imageNumber: imageNum,
+              generationMethod: 'freepik',
+              resolution: resolution,
+              tema: tema,
+              tipo: tipo,
+              publico: publico,
+              tags: tags,
+              localPath: imagePath,
+              size: fs.statSync(imagePath).size
+            };
+            
+            const imageId = await GeneratedImageManager.saveGeneratedImage(imageData);
+            log(`💾 [BANCO] Imagem Freepik salva no banco com ID: ${imageId}`);
+          } catch (saveError) {
+            log(`❌ [BANCO] Erro ao salvar imagem Freepik no banco: ${saveError}`);
+          }
         } catch (freepikError) {
           log(`❌ [FREEPIK] Freepik falhou para imagem ${imageNum}: ${freepikError}`);
           log(`🔄 Tentando gerar prompt melhorado...`);
@@ -612,7 +718,28 @@ async function generateVideoWithStableDiffusion(
   }
 
   // LIMPEZA AUTOMÁTICA DOS ARQUIVOS TEMPORÁRIOS (NÃO REMOVE O VÍDEO FINAL)
-  // cleanupTempFiles(tmpDir, log);
+  cleanupTempFiles(tmpDir, log);
+
+  // Salvar metadados do vídeo incluindo a legenda do Instagram
+  const videoMetadata = {
+    tema,
+    tipo,
+    publico,
+    formato: resolution,
+    titulo: safeTema,
+    hashtags: '',
+    videoPath: outputPath,
+    thumbnailPath: '',
+    cloudinaryVideoUrl: '',
+    cloudinaryThumbnailUrl: '',
+    duracao: duracaoTotal,
+    tamanho: fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    caption // Legenda do Instagram gerada pela IA
+  };
+  // Salvar metadados (ajuste conforme seu sistema de persistência)
+  // Exemplo: videoMetadataManager.addVideo(videoMetadata);
 
   return outputPath;
 }

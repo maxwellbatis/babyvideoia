@@ -388,7 +388,8 @@ export async function generateScript(
     '  "cenas": [\n' +
     '    { "narracao": "Frase natural e emocional (máx ' + palavrasPorCena + ' palavras)", "visual": ["Descrição visual 1 - cena principal", "Descrição visual 2 - close-up emocional", "Descrição visual 3 - vista alternativa"] },\n' +
     '    { "narracao": "Frase natural e emocional (máx ' + palavrasPorCena + ' palavras)", "visual": ["Descrição visual 1 - cena principal", "Descrição visual 2 - close-up emocional", "Descrição visual 3 - vista alternativa"] }\n' +
-    '  ]\n' +
+    '  ],\n' +
+    '  "caption": "Gere uma legenda para Instagram sobre o tema e as cenas acima, pronta para post, com emojis e chamada para ação para mães."\n' +
     '}\n\n' +
     '🎬 EXEMPLO DE NARRAÇÃO CORRETA PARA ' + template.nome + ':\n' +
     'ERRADO: "Dica número um: amamente corretamente. Dica número dois: durma bem."\n' +

@@ -18,6 +18,7 @@ export interface VideoMetadata {
   tamanho?: number;
   createdAt: string;
   updatedAt: string;
+  caption?: string; // Legenda do Instagram
 }
 
 export interface VideoMetadataFile {
@@ -212,7 +213,8 @@ export function createVideoMetadata(
   videoPath: string,
   thumbnailPath: string,
   duracao?: number,
-  tamanho?: number
+  tamanho?: number,
+  caption?: string // Legenda do Instagram
 ): Omit<VideoMetadata, 'id' | 'createdAt' | 'updatedAt'> {
   return {
     tema,
@@ -224,6 +226,7 @@ export function createVideoMetadata(
     videoPath,
     thumbnailPath,
     duracao,
-    tamanho
+    tamanho,
+    caption
   };
 } 

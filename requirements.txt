@@ -4,14 +4,6 @@ torchvision>=0.10.0
 Pillow>=8.0.0
 numpy>=1.21.0
 
-# Para carefree-creator (recomendado)
-carefree-creator>=1.0.0
-
-# Para imagen-pytorch (opcional - se disponível)
-# imagen-pytorch>=1.0.0
-
-# Para geração de imagens placeholder
-Pillow>=8.0.0
 
 # Para TTS
 gtts>=2.2.0

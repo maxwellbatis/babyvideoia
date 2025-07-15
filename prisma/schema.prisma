@@ -29,3 +29,35 @@ model AppImage {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
+
+// Modelo para armazenar imagens geradas com IA
+model GeneratedImage {
+  id                Int      @id @default(autoincrement())
+  filename          String   // Nome do arquivo local
+  cloudinaryUrl     String?  // URL no Cloudinary (opcional)
+  cloudinaryPublicId String? // ID público no Cloudinary
+  prompt            String   // Prompt usado para gerar a imagem
+  sceneDescription  String   // Descrição da cena
+  sceneNumber       Int      // Número da cena
+  imageNumber       Int      // Número da imagem na cena (1, 2, 3)
+  generationMethod  String   // 'stable-diffusion', 'freepik', 'app-image'
+  resolution        String   // 'vertical', 'horizontal', 'square'
+  tema              String   // Tema do vídeo
+  tipo              String   // Tipo do vídeo (anuncio, dica, etc)
+  publico           String   // Público-alvo
+  tags              String[] // Tags para busca semântica
+  usageCount        Int      @default(0) // Quantas vezes foi reutilizada
+  performance       Float    @default(0) // Score de performance (0-1)
+  size              Int      // Tamanho do arquivo em bytes
+  localPath         String?  // Caminho local temporário
+  isReusable        Boolean  @default(true) // Se pode ser reutilizada
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([sceneDescription])
+  @@index([tema, tipo, publico])
+  @@index([generationMethod])
+  @@index([tags])
+  @@index([usageCount])
+  @@index([performance])
+}
