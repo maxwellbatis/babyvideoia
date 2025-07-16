@@ -213,3 +213,54 @@ export async function gerarNarracaoTTSGratuito(texto: string, nomeArquivo: strin
     throw error;
   }
 }
+
+export async function gerarNarracaoComFallback(texto: string, nomeArquivo: string, voiceId = 'EXAVITQu4vr4xnSDxMaL', apiKeyParam?: string) {
+  try {
+    await gerarNarracaoElevenLabs(texto, nomeArquivo, voiceId, apiKeyParam);
+    return nomeArquivo;
+  } catch (e1) {
+    console.warn('❌ ElevenLabs falhou:', e1);
+    try {
+      await gerarNarracaoTTSGratuito(texto, nomeArquivo);
+      return nomeArquivo;
+    } catch (e2) {
+      console.warn('❌ TTS gratuito também falhou:', e2);
+      // Fallback final: áudio silencioso
+      const { exec } = require('child_process');
+      await new Promise((resolve, reject) => {
+        exec(`ffmpeg -y -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -t 5 "${nomeArquivo}"`, (error: any) => {
+          if (error) {
+            console.error('❌ Erro ao criar áudio silencioso:', error);
+            reject(error);
+          } else {
+            console.log('✅ Áudio silencioso criado:', nomeArquivo);
+            resolve(null);
+          }
+        });
+      });
+      return nomeArquivo;
+    }
+  }
+}
+
+// Função para buscar uso real de caracteres na ElevenLabs
+export async function getElevenLabsUsage(apiKeyParam?: string): Promise<{ used: number; limit: number; plan: string }> {
+  let apiKey = apiKeyParam || process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) {
+    apiKey = await getCredential('ELEVENLABS_API_KEY');
+  }
+  if (!apiKey) throw new Error('Chave ElevenLabs não configurada');
+  const url = 'https://api.elevenlabs.io/v1/user/subscription';
+  const response = await axios.get(url, {
+    headers: {
+      'xi-api-key': apiKey,
+      'Content-Type': 'application/json',
+    },
+  });
+  const data = response.data;
+  return {
+    used: data.character_count || 0,
+    limit: data.character_limit || 0,
+    plan: data.tier || 'desconhecido'
+  };
+}

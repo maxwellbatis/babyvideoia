@@ -184,8 +184,8 @@ export class GeneratedImageManager {
     imageNumber: number
   ): Promise<any | null> {
     try {
-      // Buscar imagens similares
-      const similarImages = await this.findSimilarImages({
+      // 1. Busca exata (tudo igual)
+      let similarImages = await this.findSimilarImages({
         sceneDescription,
         tema,
         tipo,
@@ -193,23 +193,55 @@ export class GeneratedImageManager {
         resolution,
         limit: 10
       });
-
-      if (similarImages.length === 0) {
-        return null;
-      }
-
-      // Filtrar por número da imagem na cena
-      const matchingImages = similarImages.filter(img => img.imageNumber === imageNumber);
-
-      if (matchingImages.length === 0) {
-        // Se não encontrar exato, usar a melhor imagem geral
+      if (similarImages.length > 0) {
+        const matchingImages = similarImages.filter(img => img.imageNumber === imageNumber);
+        if (matchingImages.length > 0) {
+          console.log('🔍 Fallback: Imagem encontrada por correspondência exata.');
+          return matchingImages.reduce((best, current) =>
+            current.performance > best.performance ? current : best
+          );
+        }
+        // Se não achou exato, retorna a melhor geral desse filtro
+        console.log('🔍 Fallback: Imagem similar encontrada por filtro completo.');
         return similarImages[0];
       }
 
-      // Retornar a imagem com melhor performance
-      return matchingImages.reduce((best, current) => 
-        current.performance > best.performance ? current : best
-      );
+      // 2. Busca por palavras-chave/tags
+      const tags = this.generateTags(sceneDescription, tema, tipo);
+      similarImages = await this.findSimilarImages({
+        tags,
+        publico,
+        resolution,
+        limit: 10
+      });
+      if (similarImages.length > 0) {
+        console.log('🔍 Fallback: Imagem encontrada por tags e público.');
+        return similarImages[0];
+      }
+
+      // 3. Busca por público
+      similarImages = await this.findSimilarImages({
+        publico,
+        resolution,
+        limit: 10
+      });
+      if (similarImages.length > 0) {
+        console.log('🔍 Fallback: Imagem encontrada apenas por público.');
+        return similarImages[0];
+      }
+
+      // 4. Qualquer imagem
+      similarImages = await this.findSimilarImages({
+        resolution,
+        limit: 1
+      });
+      if (similarImages.length > 0) {
+        console.log('🔍 Fallback: Usando qualquer imagem do banco.');
+        return similarImages[0];
+      }
+
+      // Nada encontrado
+      return null;
     } catch (error) {
       console.error('Erro ao buscar melhor imagem para cena:', error);
       return null;

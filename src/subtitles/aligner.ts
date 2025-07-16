@@ -385,3 +385,28 @@ function formatTime(seconds: number): string {
   const ms = Math.floor((seconds % 1) * 1000).toString().padStart(3, '0');
   return date.toISOString().substr(11, 8) + ',' + ms;
 }
+
+export async function gerarLegendaComFallback(texto: string, audioPath: string): Promise<string[]> {
+  try {
+    // Tenta usar Whisper (deve ser chamado externamente)
+    // Se falhar, cai para geração automática
+    const { transcribeAudio, isValidSrt } = require('../utils/whisperClient');
+    let srt = '';
+    try {
+      const result = await transcribeAudio(audioPath);
+      srt = result.srt;
+      if (isValidSrt(srt)) {
+        return convertWhisperToProgressive(srt, 'word');
+      }
+    } catch (e) {
+      console.warn('❌ Whisper falhou:', e);
+    }
+    // Fallback: geração automática baseada no texto
+    const duration = await getAudioDuration(audioPath);
+    return generateProgressiveSubtitles(texto, duration, 'word');
+  } catch (e2) {
+    console.warn('❌ Fallback de legenda também falhou:', e2);
+    // Fallback final: legenda simples
+    return texto.split('.').map((frase, i) => `${i+1}\n00:00:${(i*2).toString().padStart(2,'0')},000 --> 00:00:${((i+1)*2).toString().padStart(2,'0')},000\n${frase.trim()}\n`);
+  }
+}

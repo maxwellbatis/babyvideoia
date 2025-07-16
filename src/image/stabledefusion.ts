@@ -5,18 +5,17 @@ import { generateWithFallback } from "../text/gemini-groq"; // Usa fallback Gemi
 import { getCredential } from '../utils/credentials';
 
 // Prompt negativo fixo para realismo e segurança
-const NEGATIVE_PROMPT = "(nsfw, nude, naked, deformed iris, deformed pupils, semi-realistic, cgi, 3d, render, sketch, cartoon, drawing, anime, mutated hands and fingers:1.4), (deformed, distorted, disfigured:1.3), poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, floating limbs, disconnected limbs, mutation, mutated, ugly, disgusting, amputation";
+const NEGATIVE_PROMPT = "doll, toy, cartoon, illustration, 3d, cgi, render, wax, mannequin, extra fingers, extra limbs, deformed, big eyes, anime, stylized, plastic, fake, blurry, lowres, bad anatomy, bad hands, bad face, mutated, poorly drawn, out of frame, unnatural skin, waxy, glossy, extra arms, extra legs, fused fingers, fused limbs, missing fingers, missing limbs, bad proportions, bad eyes, bad mouth, bad teeth, bad nose, bad ears, bad hair, bad lighting, bad composition, bad anatomy, mutated hands, mutated face, mutated body, ugly, creepy, scary, horror, monster, grotesque, distorted, artifact, watermark, signature, text, error, jpeg artifacts, low quality, lowres, worst quality, low detail, low realism, not photorealistic, not realistic, not natural, not candid, not photo, not photography, not portrait, not real";
 
-let cachedColabUrl: string | undefined;
+// Sempre busca do banco, nunca usa cache ou .env
 async function getColabUrl(): Promise<string> {
-  if (cachedColabUrl) return cachedColabUrl;
-  let dbUrl = await getCredential('COLAB_SD_URL');
-  dbUrl = dbUrl || process.env.COLAB_SD_URL || "https://SEU_COLAB_URL";
+  const dbUrl = await getCredential('COLAB_SD_URL');
+  if (!dbUrl || dbUrl.includes('seu_colab_url_aqui') || dbUrl.includes('SEU_COLAB_URL')) {
+    throw new Error('URL do Colab SD não configurada corretamente no banco. Configure em Configurações de API.');
+  }
   // Garante que termina sem barra
-  dbUrl = dbUrl.replace(/\/$/, '');
-  // Garante que termina com o endpoint correto
-  cachedColabUrl = dbUrl + '/sdapi/v1/txt2img';
-  return cachedColabUrl;
+  const cleanUrl = dbUrl.replace(/\/$/, '');
+  return cleanUrl + '/sdapi/v1/txt2img';
 }
 
 /**
@@ -48,10 +47,13 @@ export async function gerarImagemColabSD(
     resolution?: 'vertical' | 'horizontal' | 'square';
     width?: number;
     height?: number;
+    slowMode?: boolean; // Novo parâmetro para modo lento
   } = {}
 ): Promise<string> {
   // 1. Traduzir prompt para inglês
+  console.log(`🔄 Traduzindo prompt para inglês: "${promptPt.substring(0, 50)}..."`);
   const promptEn = await traduzirPromptParaIngles(promptPt);
+  console.log(`✅ Tradução concluída: "${promptEn.substring(0, 50)}..."`);
   
   // 2. Determinar dimensões baseado na resolução
   let width = options.width;
@@ -71,33 +73,71 @@ export async function gerarImagemColabSD(
     }
   }
   
-  // 3. Montar payload
+  // 3. Montar payload com configurações mais lentas se solicitado
+  const steps = options.slowMode ? 100 : 60; // Mais steps = mais lento mas melhor qualidade
+  const cfgScale = options.slowMode ? 8 : 7; // Maior CFG = mais lento mas mais preciso
+  
   const data = {
     prompt: promptEn,
     negative_prompt: options.negativePrompt || NEGATIVE_PROMPT,
-    steps: 60,
+    steps: steps,
+    cfg_scale: cfgScale,
     width: width,
-    height: height
+    height: height,
+    sampler_name: options.slowMode ? "DPM++ 2M Karras" : "Euler a", // Sampler mais lento
+    denoising_strength: options.slowMode ? 0.7 : 0.75 // Menor denoising = mais lento
   };
   
-  // 4. Chamar API do Colab
+  console.log(`🎨 Configurações SD: ${steps} steps, CFG ${cfgScale}, ${width}x${height}`);
+  if (options.slowMode) {
+    console.log(`🐌 Modo lento ativado - aguarde mais tempo para melhor qualidade`);
+  }
+  
+  // 4. Delay inicial para estabilizar o Colab
+  if (options.slowMode) {
+    console.log(`⏳ Aguardando 5 segundos para estabilizar o Colab...`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+  
+  // 5. Chamar API do Colab
   try {
     const colabUrl = await getColabUrl();
-    const res = await axios.post(colabUrl, data, { timeout: 120000 });
+    console.log(`🚀 Enviando requisição para Colab: ${colabUrl}`);
+    
+    const startTime = Date.now();
+    const res = await axios.post(colabUrl, data, { 
+      timeout: options.slowMode ? 300000 : 120000 // 5 minutos no modo lento
+    });
+    const endTime = Date.now();
+    
+    console.log(`⏱️ Tempo de geração: ${Math.round((endTime - startTime) / 1000)}s`);
+    
     const base64Image = res.data.images?.[0];
     if (base64Image) {
       fs.mkdirSync(path.dirname(outputPath), { recursive: true });
       fs.writeFileSync(outputPath, Buffer.from(base64Image, "base64"));
-      console.log(`✅ Imagem ${width}x${height} salva em ${outputPath}`);
+      
+      // Verificar se a imagem foi salva corretamente
+      const stats = fs.statSync(outputPath);
+      console.log(`✅ Imagem ${width}x${height} salva em ${outputPath} (${Math.round(stats.size / 1024)}KB)`);
+      
+      // Delay adicional no modo lento para não sobrecarregar
+      if (options.slowMode) {
+        console.log(`⏳ Aguardando 8 segundos antes da próxima geração...`);
+        await new Promise(resolve => setTimeout(resolve, 8000));
+      }
+      
       return outputPath;
     } else {
       throw new Error("Nenhuma imagem foi retornada pela API do Colab.");
     }
   } catch (err: any) {
+    console.error(`❌ Erro detalhado do Colab:`, err.response?.data || err.message);
     throw new Error("Erro ao gerar imagem no Colab: " + (err.response?.data || err.message));
   }
 }
 
+// Função mantida para compatibilidade, mas agora não faz cache
 export function clearColabCache() {
-  cachedColabUrl = undefined;
+  // Não faz mais nada
 } 

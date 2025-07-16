@@ -23,32 +23,7 @@ async function generateWithFallback(prompt: string, systemPrompt?: string, getCr
     throw new Error('Nenhuma API key configurada. Configure GEMINI_KEY, GROQ_API_KEY ou OPENAI_API_KEY no banco ou .env');
   }
 
-  // Tentar Gemini primeiro
-  if (geminiKey) {
-    try {
-      const genAI = new GoogleGenerativeAI(geminiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-      const fullPrompt = systemPrompt ? systemPrompt + '\n\n' + prompt : prompt;
-      
-      const result = await model.generateContent(fullPrompt);
-      const response = await result.response;
-      const text = response.text();
-      
-      console.log('✅ Gemini usado com sucesso');
-      return text;
-    } catch (error: any) {
-      console.log('❌ Gemini falhou:', error.message || error);
-      
-      // Se for erro de quota, aguardar um pouco antes de tentar próxima API
-      if (error.status === 429) {
-        console.log('⏳ Aguardando 5 segundos devido a quota excedida...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
-    }
-  }
-
-  // Fallback para Groq
+  // Tentar Groq primeiro
   if (groqKey) {
     try {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -73,15 +48,38 @@ async function generateWithFallback(prompt: string, systemPrompt?: string, getCr
       }
 
       const data = await response.json();
-      console.log('✅ Groq usado com sucesso (fallback)');
+      console.log('✅ Groq usado com sucesso');
       return data.choices[0].message.content;
     } catch (error: any) {
-      console.log('❌ Groq também falhou:', error.message || error);
-      
+      console.log('❌ Groq falhou:', error.message || error);
       // Se for erro de quota, aguardar um pouco antes de tentar próxima API
       if (error.message && error.message.includes('429')) {
         console.log('⏳ Aguardando 3 segundos devido a quota excedida...');
         await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+  }
+
+  // Fallback para Gemini
+  if (geminiKey) {
+    try {
+      const genAI = new GoogleGenerativeAI(geminiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+      const fullPrompt = systemPrompt ? systemPrompt + '\n\n' + prompt : prompt;
+      
+      const result = await model.generateContent(fullPrompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      console.log('✅ Gemini usado com sucesso (fallback)');
+      return text;
+    } catch (error: any) {
+      console.log('❌ Gemini falhou:', error.message || error);
+      // Se for erro de quota, aguardar um pouco antes de tentar próxima API
+      if (error.status === 429) {
+        console.log('⏳ Aguardando 5 segundos devido a quota excedida...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
   }
@@ -360,62 +358,47 @@ export async function generateScript(
     exemplosParaUsar = template.exemplos;
   }
 
-  // Prompt detalhado e específico para evitar conteúdo robótico
-  const prompt = 'Crie um roteiro para um vídeo ' + template.nome + ' sobre "' + tema + '" para ' + publicoAlvo + '.\n\n' +
-    '🎯 OBJETIVO: ' + template.objetivo + '\n' +
-    '📐 ESTRUTURA: ' + template.estrutura + '\n' +
-    '🎭 TOM: ' + template.tom + '\n\n' +
-    '📋 ESPECIFICAÇÕES TÉCNICAS:\n' +
-    '- Duração total: ' + duracaoTotal + ' segundos\n' +
-    '- Cenas: ' + cenas + ' cenas\n' +
-    '- Palavras por cena: máximo ' + palavrasPorCena + ' palavras\n' +
-    '- Duração por cena: ' + duracaoCena + ' segundos\n\n' +
-    '💡 EXEMPLOS DE FRASES PARA ' + template.nome.toUpperCase() + ':\n' +
-    exemplosParaUsar.map((ex, i) => (i + 1) + '. "' + ex + '"').join('\n') + '\n\n' +
-    '🚫 REGRAS CRÍTICAS PARA EVITAR CONTEÚDO ROBÓTICO:\n' +
-    '1. NÃO use frases genéricas como "Dica 1:", "Primeiro:", "Em segundo lugar:"\n' +
-    '2. NÃO repita a mesma estrutura de outros vídeos\n' +
-    '3. NÃO use linguagem formal ou técnica demais\n' +
-    '4. NÃO faça listas numeradas na narração\n' +
-    '5. Use frases naturais, como em uma conversa real\n' +
-    '6. Inclua emoção, perguntas, metáforas e exemplos\n' +
-    '7. Varie o ritmo e a entonação das frases\n' +
-    '8. Use pausas naturais (vírgulas, reticências)\n' +
-    '9. Conecte as frases de forma fluida\n' +
-    '10. Seja específico e pessoal, não genérico\n\n' +
-    '✅ FORMATO OBRIGATÓRIO - RETORNE APENAS JSON PURO:\n' +
-    '{\n' +
-    '  "cenas": [\n' +
-    '    { "narracao": "Frase natural e emocional (máx ' + palavrasPorCena + ' palavras)", "visual": ["Descrição visual 1 - cena principal", "Descrição visual 2 - close-up emocional", "Descrição visual 3 - vista alternativa"] },\n' +
-    '    { "narracao": "Frase natural e emocional (máx ' + palavrasPorCena + ' palavras)", "visual": ["Descrição visual 1 - cena principal", "Descrição visual 2 - close-up emocional", "Descrição visual 3 - vista alternativa"] }\n' +
-    '  ],\n' +
-    '  "caption": "Gere uma legenda para Instagram sobre o tema e as cenas acima, pronta para post, com emojis e chamada para ação para mães."\n' +
-    '}\n\n' +
-    '🎬 EXEMPLO DE NARRAÇÃO CORRETA PARA ' + template.nome + ':\n' +
-    'ERRADO: "Dica número um: amamente corretamente. Dica número dois: durma bem."\n' +
-    'CORRETO: "Amamentar pode ser desafiador no início, mas com a posição certa tudo fica mais leve. E quando o bebê dorme bem, você também descansa melhor."\n\n' +
-    '🎨 EXEMPLO DE VISUAL CORRETO (3 descrições diferentes por cena):\n' +
-    '"visual": [\n' +
-    '  "Mãe amamentando bebê em poltrona, luz natural suave, ambiente aconchegante",\n' +
-    '  "Close-up do rosto da mãe com expressão de paz e amor, foco seletivo",\n' +
-    '  "Vista de cima, bebê dormindo no colo, mãos da mãe segurando com carinho"\n' +
-    ']\n\n' +
-    '⚠️ IMPORTANTE:\n' +
-    '- RETORNE APENAS O JSON - SEM TEXTO EXPLICATIVO\n' +
-    '- NÃO use markdown (```json)\n' +
-    '- Gere EXATAMENTE ' + cenas + ' cenas\n' +
-    '- Cada narração deve soar natural e conversacional\n' +
-    '- Use o tom ' + template.tom + '\n' +
-    '- Siga a estrutura ' + template.estrutura + '\n' +
-    '- Inclua emoção e humanidade nas frases\n' +
-    '- SEMPRE gere 3 descrições visuais diferentes para cada cena\n' +
-    '- Cada descrição visual deve ser específica e única\n\n' +
-    'Gere um roteiro ' + template.nome + ' sobre "' + tema + '" que seja ' + template.tom + ' e siga a estrutura ' + template.estrutura + '. RETORNE APENAS O JSON.';
+  // Prompt simples e direto para evitar conteúdo robótico
+  const prompt = `Crie um roteiro natural para um vídeo sobre "${tema}".
 
-  const systemPrompt = 'Você é um roteirista especializado em ' + template.nome + ' para ' + publicoAlvo + '. ' +
-    'Crie roteiros ' + template.tom + ' que sejam naturais, emocionais e conversacionais. ' +
-    'Evite frases robóticas, genéricas ou repetitivas. ' +
-    'Use linguagem humana, com emoção e variação de ritmo.';
+PÚBLICO: ${publicoAlvo}
+TIPO: ${tipo}
+TOM: ${template.tom}
+
+INSTRUÇÕES:
+- Fale naturalmente, como em uma conversa
+- Adapte a linguagem para ${publicoAlvo}
+- Divida em ${cenas} cenas fluidas
+- Cada cena deve ter narração e descrição visual
+- Use SSML básico: <speak>, <prosody>, <break>, <emphasis>
+
+IMPORTANTE: 
+- Retorne APENAS o JSON, sem texto explicativo antes ou depois
+- Cada cena DEVE ter EXATAMENTE 3 descrições visuais diferentes
+- NÃO retorne apenas 1 descrição por cena
+
+FORMATO DO JSON:
+{
+  "cenas": [
+    {
+      "narracao": "<speak>Oi! Vamos falar sobre [tema]...</speak>",
+      "visual": [
+        "Primeira descrição visual detalhada",
+        "Segunda descrição visual diferente", 
+        "Terceira descrição visual única"
+      ]
+    }
+  ]
+}
+
+EXEMPLO DE DESCRIÇÕES VISUAIS:
+- Cena 1: ["Pessoa em ambiente de trabalho", "Close-up do rosto pensativo", "Vista de cima da mesa com documentos"]
+- Cena 2: ["Grupo de pessoas em reunião", "Tela de computador com gráficos", "Mãos digitando no teclado"]`;
+
+  const systemPrompt = `Você é um roteirista especializado em ${tipo} para ${publicoAlvo}. 
+Crie conteúdo natural, conversacional e envolvente com SSML básico para ElevenLabs.
+Retorne apenas JSON válido, sem texto explicativo.
+Cada cena deve ter EXATAMENTE 3 descrições visuais diferentes.`;
 
   // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
   if (apiKey) {

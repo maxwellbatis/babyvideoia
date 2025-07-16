@@ -28,101 +28,132 @@ export async function generateSceneImageSuggestions(
   apiKey?: string
 ): Promise<SceneImageSuggestion[]> {
   
-  const systemPrompt = `Você é um especialista em criação de conteúdo visual para vídeos sobre maternidade e Baby Diary.
+  const systemPrompt = `Você é um especialista em criação de conteúdo visual para vídeos.
 
-CONTEXTO DO VÍDEO:
+CONTEXTO:
 - Tema: ${context.tema}
 - Tipo: ${context.tipo}
 - Público: ${context.publico}
 - Formato: ${context.formato}
-- Resolução: ${context.resolution}
 
 SUA TAREFA:
-Para cada cena, você deve gerar:
-1. PROMPT DE IMAGEM: Descrição detalhada para gerar imagem AI
-2. TAGS SUGERIDAS: Categorias para organizar a imagem
-3. DESCRIÇÃO: Explicação do que a imagem representa
-4. MOOD: Tom emocional (alegre, sereno, motivacional, etc.)
-5. ESTILO: Estilo visual (realista, cartoon, minimalista, etc.)
-
-FORMATO DE RESPOSTA:
-Responda APENAS em JSON válido com este formato:
-[
-  {
-    "sceneNumber": 1,
-    "sceneText": "texto da cena",
-    "imagePrompt": "prompt detalhado para gerar imagem",
-    "suggestedTags": ["tag1", "tag2"],
-    "description": "descrição da imagem",
-    "mood": "alegre",
-    "style": "realista"
-  }
-]
+Para cada cena, gere:
+1. PROMPT DE IMAGEM: Descrição visual clara e detalhada
+2. TAGS: Categorias para organizar
+3. DESCRIÇÃO: O que a imagem representa
+4. MOOD: Tom emocional
+5. ESTILO: Estilo visual
 
 REGRAS:
-- Prompts devem ser específicos e detalhados
-- Foque no contexto de maternidade/bebês
-- Use linguagem visual rica
+- Cada descrição deve ser única e diferente
+- Foque no contexto do tema e público
+- Use linguagem visual clara
 - Mantenha consistência entre cenas
-- Considere a resolução do vídeo`;
+
+ADAPTAÇÃO POR PÚBLICO:
+- Se público for mães/gestantes: use maternidade, bebê, família, carinho
+- Se público for negócios/empreendedores: use escritório, reuniões, gráficos, tecnologia
+- Se público for influenciadoras: use redes sociais, celular, stories, engajamento
+- Se público for agências: use dashboards, resultados, clientes, estratégia
+- Se público for afiliados: use vendas, comissões, produtos, marketing
+
+EXEMPLO PARA NEGÓCIOS:
+Prompt: "Empreendedor em reunião de negócios, ambiente corporativo, gráficos de crescimento"
+Tags: "negócios, empreendedorismo, crescimento"
+Descrição: "Momento de decisão estratégica"
+Mood: "profissional, focado"
+Estilo: "corporativo, moderno"
+
+EXEMPLO PARA MÃES:
+Prompt: "Mãe sorrindo com bebê no colo, ambiente acolhedor, luz suave"
+Tags: "maternidade, família, carinho"
+Descrição: "Momentos de conexão entre mãe e bebê"
+Mood: "alegre, sereno"
+Estilo: "realista, natural"`;
 
   const userPrompt = `Gere sugestões de imagens para estas ${context.cenas.length} cenas:
 
-${context.cenas.map((scene, index) => `${index + 1}. ${scene}`).join('\n')}
+${context.cenas.map((cena, index) => `CENA ${index + 1}: ${cena}`).join('\n')}
 
-Responda em JSON válido seguindo exatamente o formato especificado.`;
+IMPORTANTE:
+- Cada cena deve ter 3 descrições visuais ÚNICAS e DIFERENTES
+- Foque no contexto: ${context.publico} - ${context.tema}
+- Use linguagem visual rica e específica
+- Varie ângulos, emoções, ações e cenários
+- NÃO repita descrições entre cenas
+
+EXEMPLO DE VARIAÇÃO:
+Cena 1: ["Empreendedor em reunião", "Close-up do rosto decidido", "Vista de cima da mesa com documentos"]
+Cena 2: ["Dashboard com gráficos", "Pessoa analisando dados", "Tela de computador com resultados"]
+Cena 3: ["Handshake de negócio", "Celebração de equipe", "Momento de conquista"]
+
+Retorne apenas o JSON com as sugestões.`;
 
   try {
-    // Se apiKey foi fornecida, usar ela diretamente, senão usar fallback do banco
-    let response: string;
-    if (apiKey) {
-      response = await generateWithFallback(userPrompt, systemPrompt, async (name: string) => {
-        if (name === 'GEMINI_KEY') return apiKey;
-        return await getCredential(name);
-      });
-    } else {
-      response = await generateWithFallback(userPrompt, systemPrompt);
+    const response = await generateWithFallback(userPrompt, systemPrompt);
+    
+    // Limpar resposta e extrair JSON
+    let responseText = response.trim();
+    
+    // Remover texto explicativo antes do JSON
+    const jsonStart = responseText.search(/\[/);
+    if (jsonStart > 0) {
+      responseText = responseText.substring(jsonStart);
     }
     
-    // Tentar extrair JSON da resposta
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      const suggestions = JSON.parse(jsonMatch[0]);
-      return suggestions.map((suggestion: any, index: number) => ({
-        sceneNumber: suggestion.sceneNumber || index + 1,
-        sceneText: suggestion.sceneText || context.cenas[index] || '',
-        imagePrompt: suggestion.imagePrompt || '',
-        suggestedTags: suggestion.suggestedTags || ['app-mockup'],
-        description: suggestion.description || '',
-        mood: suggestion.mood || 'neutro',
-        style: suggestion.style || 'realista'
-      }));
+    // Encontrar o final do JSON (último ])
+    const jsonEnd = responseText.lastIndexOf(']');
+    if (jsonEnd > 0) {
+      responseText = responseText.substring(0, jsonEnd + 1);
     }
     
-    // Fallback se não conseguir extrair JSON
-    return context.cenas.map((scene, index) => ({
-      sceneNumber: index + 1,
-      sceneText: scene,
-      imagePrompt: `fotografia realista, alta qualidade, ${context.tema.toLowerCase()}, maternidade, bebê, família, amor, cuidado, carinho, alta resolução, detalhes finos`,
-      suggestedTags: ['app-mockup', context.tipo, context.publico],
-      description: `Imagem representando: ${scene}`,
-      mood: 'alegre',
-      style: 'realista'
+    // Parse do JSON
+    const suggestions = JSON.parse(responseText);
+    
+    if (!Array.isArray(suggestions)) {
+      throw new Error('Resposta não é um array válido');
+    }
+    
+    return suggestions.map(suggestion => ({
+      sceneNumber: suggestion.sceneNumber || 1,
+      sceneText: suggestion.sceneText || '',
+      imagePrompt: suggestion.imagePrompt || '',
+      suggestedTags: suggestion.suggestedTags || [],
+      description: suggestion.description || '',
+      mood: suggestion.mood || 'neutro',
+      style: suggestion.style || 'realista'
     }));
     
   } catch (error) {
     console.error('Erro ao gerar sugestões de imagens:', error);
     
-    // Fallback básico
-    return context.cenas.map((scene, index) => ({
-      sceneNumber: index + 1,
-      sceneText: scene,
-      imagePrompt: `fotografia realista, alta qualidade, ${context.tema.toLowerCase()}, maternidade, bebê, família, amor, cuidado, carinho, alta resolução, detalhes finos`,
-      suggestedTags: ['app-mockup', context.tipo, context.publico],
-      description: `Imagem representando: ${scene}`,
-      mood: 'alegre',
-      style: 'realista'
-    }));
+    // Fallback: gerar sugestões básicas
+    return context.cenas.map((cena, index) => {
+      const publicoContext = context.publico.toLowerCase();
+      let basePrompt = '';
+      
+      if (publicoContext.includes('empreendedor') || publicoContext.includes('negócio') || publicoContext.includes('infoproduto')) {
+        basePrompt = 'empreendedor em ambiente corporativo, gráficos de crescimento, tecnologia';
+      } else if (publicoContext.includes('influenciadora')) {
+        basePrompt = 'influenciadora usando redes sociais, celular, stories, engajamento';
+      } else if (publicoContext.includes('agência')) {
+        basePrompt = 'dashboard com resultados, reunião de equipe, estratégia de marketing';
+      } else if (publicoContext.includes('afiliado')) {
+        basePrompt = 'vendas, comissões, produtos, marketing digital';
+      } else {
+        basePrompt = 'maternidade, bebê, família, carinho';
+      }
+      
+      return {
+        sceneNumber: index + 1,
+        sceneText: cena,
+        imagePrompt: `${basePrompt}, cena ${index + 1}, alta qualidade`,
+        suggestedTags: [context.tipo, context.publico],
+        description: `Imagem para cena ${index + 1}`,
+        mood: 'profissional',
+        style: 'realista'
+      };
+    });
   }
 }
 
