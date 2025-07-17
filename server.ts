@@ -11,9 +11,9 @@ const port = process.env.PORT || 3001;
 // Configuração para uploads de imagens (se necessário)
 const upload = multer({ dest: 'uploads/' });
 
-// Configurar CORS para aceitar requisições do frontend video.babydiary.shop
+// Configurar CORS para aceitar requisições do frontend videos.babydiary.shop
 app.use(cors({
-  origin: 'https://video.babydiary.shop',
+  origin: 'https://videos.babydiary.shop',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
@@ -169,7 +169,7 @@ app.get('/api/status/apis', async (req, res) => {
       status.usage.gemini = null;
       status.errors.gemini = 'A API Gemini não fornece endpoint público para consulta de uso. Consulte o painel do Google.';
     }
-  } catch (e) {
+  } catch (e: any) {
     status.errors.gemini = e.message || e;
     status.usage.gemini = null;
   }
@@ -184,7 +184,7 @@ app.get('/api/status/apis', async (req, res) => {
       status.usage.groq = null;
       status.errors.groq = 'A API Groq não fornece endpoint público para consulta de uso. Consulte o painel da Groq.';
     }
-  } catch (e) {
+  } catch (e: any) {
     status.errors.groq = e.message || e;
     status.usage.groq = null;
   }
@@ -199,12 +199,12 @@ app.get('/api/status/apis', async (req, res) => {
         const usage = await getElevenLabsUsage(elevenKey);
         status.limits.elevenlabs = `${usage.limit} caracteres (${usage.plan})`;
         status.usage.elevenlabs = usage.used;
-      } catch (e) {
+      } catch (e: any) {
         status.errors.elevenlabs = e.message || e;
         status.usage.elevenlabs = null;
       }
     }
-  } catch (e) {
+  } catch (e: any) {
     status.errors.elevenlabs = e.message || e;
     status.usage.elevenlabs = null;
   }
@@ -220,7 +220,7 @@ app.get('/api/status/apis', async (req, res) => {
     const freepikUsed = getFreepikUsageToday();
     status.limits.freepik = `100/dia (usado: ${freepikUsed})`;
     status.usage.freepik = freepikUsed;
-  } catch (e) {
+  } catch (e: any) {
     status.errors.freepik = e.message || e;
     status.usage.freepik = null;
   }
@@ -243,16 +243,16 @@ app.get('/api/status/apis', async (req, res) => {
           const usage = await cloudinary.api.usage();
           status.limits.cloudinary = `${usage.plan?.storage_limit || '25GB'} (${usage.plan?.name || 'desconhecido'})`;
           status.usage.cloudinary = usage.storage?.usage || usage.storage_usage || null;
-        } catch (e) {
+        } catch (e: any) {
           status.errors.cloudinary = e.message || e;
           status.usage.cloudinary = null;
         }
-      } catch (e) {
+      } catch (e: any) {
         status.cloudinary = false;
         status.errors.cloudinary = e.message || e;
       }
     }
-  } catch (e) {
+  } catch (e: any) {
     status.errors.cloudinary = e.message || e;
     status.usage.cloudinary = null;
   }
@@ -314,7 +314,7 @@ app.post('/api/credentials', async (req, res) => {
     try {
       const { clearCredentialCache } = require('./src/utils/credentials');
       clearCredentialCache();
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Não foi possível limpar o cache das credenciais:', e);
     }
 
@@ -468,7 +468,7 @@ app.get('/api/music', async (req, res) => {
   try {
     logServer('Listando músicas da biblioteca...');
     
-    const musicDir = path.join(__dirname, 'assets', 'music');
+    const musicDir = path.resolve(__dirname, 'assets', 'music');
     const categories = ['ambient', 'energetic', 'emotional', 'corporate'];
     const musicLibrary = [];
     
@@ -476,7 +476,7 @@ app.get('/api/music', async (req, res) => {
       const categoryPath = path.join(musicDir, category);
       
       if (fs.existsSync(categoryPath)) {
-        const files = fs.readdirSync(categoryPath).filter(file => 
+        const files = fs.readdirSync(categoryPath).filter((file: string) => 
           file.endsWith('.mp3') || file.endsWith('.wav') || file.endsWith('.m4a')
         );
         
@@ -489,7 +489,7 @@ app.get('/api/music', async (req, res) => {
           const name = fileName.replace(/-/g, ' ').replace(/\d+$/, '').trim();
           
           // Mapear categoria para categoria do frontend
-          const categoryMap = {
+          const categoryMap: { [key: string]: string } = {
             'ambient': 'calm',
             'energetic': 'upbeat', 
             'emotional': 'dramatic',
@@ -497,7 +497,7 @@ app.get('/api/music', async (req, res) => {
           };
           
           // Mapear categoria para gênero
-          const genreMap = {
+          const genreMap: { [key: string]: string } = {
             'ambient': 'Ambient',
             'energetic': 'Electronic',
             'emotional': 'Orchestral',
@@ -505,7 +505,7 @@ app.get('/api/music', async (req, res) => {
           };
           
           // Mapear categoria para mood
-          const moodMap = {
+          const moodMap: { [key: string]: string } = {
             'ambient': 'Relaxante',
             'energetic': 'Energético',
             'emotional': 'Emocional',
@@ -747,7 +747,7 @@ app.delete('/api/user-images/:id', async (req, res) => {
     }
     
     // Encontrar imagem para deletar
-    const imageIndex = images.findIndex(img => img.id === id);
+    const imageIndex = images.findIndex((img: { id: string }) => img.id === id);
     if (imageIndex === -1) {
       return res.status(404).json({ error: 'Imagem não encontrada' });
     }
