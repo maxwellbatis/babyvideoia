@@ -469,24 +469,48 @@ app.get('/api/music', async (req, res) => {
   try {
     logServer('Listando músicas da biblioteca...');
     
-    // Caminho universal para assets/music (funciona em dev e build)
-    const musicDir = path.resolve(__dirname, '..', 'assets', 'music');
-    logServer('Caminho absoluto para músicas:', musicDir);
+    // Tentar múltiplos caminhos para encontrar as músicas (funciona em dev e produção)
+    const possiblePaths = [
+      path.resolve(__dirname, '..', 'assets', 'music'), // Desenvolvimento local
+      path.resolve(__dirname, 'assets', 'music'), // Produção (se assets estiver na raiz)
+      path.resolve(process.cwd(), 'assets', 'music'), // Caminho absoluto do processo
+      path.resolve(__dirname, '..', '..', 'assets', 'music'), // Backup para produção
+    ];
+    
+    let musicDir = null;
+    for (const possiblePath of possiblePaths) {
+      logServer('Tentando caminho:', possiblePath);
+      if (fs.existsSync(possiblePath)) {
+        musicDir = possiblePath;
+        logServer('✅ Caminho encontrado:', musicDir);
+        break;
+      }
+    }
+    
+    if (!musicDir) {
+      logServer('❌ Nenhum caminho válido encontrado para músicas');
+      logServer('Caminhos tentados:', possiblePaths);
+      return res.status(500).json({ error: 'Biblioteca de músicas não encontrada' });
+    }
+    
     const categories = ['ambient', 'energetic', 'emotional', 'corporate'];
     const musicLibrary = [];
     
     // Definir base da API para URLs absolutas
     const apiBase = process.env.NODE_ENV === 'production'
-      ? 'https://studio.babydiary.shop/api'
+      ? 'https://videos.babydiary.shop/api'
       : 'http://localhost:3001/api';
     
     for (const category of categories) {
       const categoryPath = path.join(musicDir, category);
+      logServer(`Verificando categoria: ${category} em ${categoryPath}`);
       
       if (fs.existsSync(categoryPath)) {
         const files = fs.readdirSync(categoryPath).filter((file: string) => 
           file.endsWith('.mp3') || file.endsWith('.wav') || file.endsWith('.m4a')
         );
+        
+        logServer(`Encontrados ${files.length} arquivos na categoria ${category}`);
         
         for (const file of files) {
           const filePath = path.join(categoryPath, file);
@@ -535,6 +559,8 @@ app.get('/api/music', async (req, res) => {
             uploaded_at: stats.mtime.toISOString()
           });
         }
+      } else {
+        logServer(`⚠️ Categoria ${category} não encontrada em ${categoryPath}`);
       }
     }
     
@@ -550,9 +576,27 @@ app.get('/api/music', async (req, res) => {
 app.get('/api/music/file/:category/:filename', (req, res) => {
   try {
     const { category, filename } = req.params;
-    const musicPath = path.join(__dirname, 'assets', 'music', category, decodeURIComponent(filename));
     
-    if (!fs.existsSync(musicPath)) {
+    // Tentar múltiplos caminhos para encontrar as músicas
+    const possiblePaths = [
+      path.resolve(__dirname, '..', 'assets', 'music'), // Desenvolvimento local
+      path.resolve(__dirname, 'assets', 'music'), // Produção (se assets estiver na raiz)
+      path.resolve(process.cwd(), 'assets', 'music'), // Caminho absoluto do processo
+      path.resolve(__dirname, '..', '..', 'assets', 'music'), // Backup para produção
+    ];
+    
+    let musicPath = null;
+    for (const possiblePath of possiblePaths) {
+      const testPath = path.join(possiblePath, category, decodeURIComponent(filename));
+      if (fs.existsSync(testPath)) {
+        musicPath = testPath;
+        break;
+      }
+    }
+    
+    if (!musicPath) {
+      logServer('❌ Arquivo de música não encontrado:', { category, filename });
+      logServer('Caminhos tentados:', possiblePaths.map(p => path.join(p, category, decodeURIComponent(filename))));
       return res.status(404).json({ error: 'Arquivo de música não encontrado' });
     }
     

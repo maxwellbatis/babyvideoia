@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Detectar ambiente para definir a baseURL correta
 const isProd = typeof window !== 'undefined' && window.location.hostname.endsWith('babydiary.shop');
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = 'https://videos.babydiary.shop/api';
 // Se o backend mudar de domínio, ajuste o valor acima.
 
 const api = axios.create({
