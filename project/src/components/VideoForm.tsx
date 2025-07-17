@@ -83,6 +83,41 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
   const [cta, setCta] = useState('');
   const { showToast } = useToast();
 
+  // Adicione o estado para controlar o preview
+  const audioPreviewRef = React.useRef<HTMLAudioElement>(null);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+
+  // Função para tocar/parar preview
+  const handlePlayPreview = () => {
+    if (!selectedMusic) return;
+    if (!audioPreviewRef.current) return;
+    if (isPlayingPreview) {
+      audioPreviewRef.current.pause();
+      setIsPlayingPreview(false);
+    } else {
+      audioPreviewRef.current.currentTime = 0;
+      audioPreviewRef.current.volume = musicVolume;
+      audioPreviewRef.current.play();
+      setIsPlayingPreview(true);
+    }
+  };
+
+  // Atualizar volume do preview ao mudar o slider
+  useEffect(() => {
+    if (audioPreviewRef.current) {
+      audioPreviewRef.current.volume = musicVolume;
+    }
+  }, [musicVolume]);
+
+  // Parar preview ao trocar de música
+  useEffect(() => {
+    if (audioPreviewRef.current) {
+      audioPreviewRef.current.pause();
+      audioPreviewRef.current.currentTime = 0;
+      setIsPlayingPreview(false);
+    }
+  }, [selectedMusic]);
+
   const tipoMap: Record<string, string> = {
     anuncio: 'Anúncio/Publicidade',
     dica: 'Dica Rápida',
@@ -825,7 +860,6 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
                     {(musicVolume * 100).toFixed(0)}%
                   </span>
                 </div>
-                
                 {/* Preview da música selecionada */}
                 <div className="mt-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 rounded-xl border border-green-200 dark:border-green-700">
                   <div className="flex items-center justify-between">
@@ -846,6 +880,22 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
                     >
                       Remover
                     </button>
+                  </div>
+                  {/* Player de preview */}
+                  <div className="flex items-center mt-4 space-x-3">
+                    <button
+                      onClick={handlePlayPreview}
+                      className="p-2 rounded-full bg-purple-100 hover:bg-purple-200 dark:bg-purple-800 dark:hover:bg-purple-700 text-purple-700 dark:text-purple-200"
+                    >
+                      {isPlayingPreview ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                    </button>
+                    <audio
+                      ref={audioPreviewRef}
+                      src={selectedMusic.url}
+                      onEnded={() => setIsPlayingPreview(false)}
+                      style={{ display: 'none' }}
+                    />
+                    <span className="text-xs text-gray-500">Preview</span>
                   </div>
                 </div>
               </Card>

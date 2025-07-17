@@ -13,7 +13,7 @@ const upload = multer({ dest: 'uploads/' });
 
 // Configurar CORS para aceitar requisições do frontend videos.babydiary.shop
 app.use(cors({
-  origin: 'https://videos.babydiary.shop',
+  origin: 'http://localhost:5173',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
@@ -468,9 +468,16 @@ app.get('/api/music', async (req, res) => {
   try {
     logServer('Listando músicas da biblioteca...');
     
-    const musicDir = path.resolve(__dirname, 'assets', 'music');
+    // Caminho universal para assets/music (funciona em dev e build)
+    const musicDir = path.resolve(__dirname, '..', 'assets', 'music');
+    logServer('Caminho absoluto para músicas:', musicDir);
     const categories = ['ambient', 'energetic', 'emotional', 'corporate'];
     const musicLibrary = [];
+    
+    // Definir base da API para URLs absolutas
+    const apiBase = process.env.NODE_ENV === 'production'
+      ? 'https://studio.babydiary.shop/api'
+      : 'http://localhost:3001/api';
     
     for (const category of categories) {
       const categoryPath = path.join(musicDir, category);
@@ -489,7 +496,7 @@ app.get('/api/music', async (req, res) => {
           const name = fileName.replace(/-/g, ' ').replace(/\d+$/, '').trim();
           
           // Mapear categoria para categoria do frontend
-          const categoryMap: { [key: string]: string } = {
+          const categoryMap: Record<string, string> = {
             'ambient': 'calm',
             'energetic': 'upbeat', 
             'emotional': 'dramatic',
@@ -497,7 +504,7 @@ app.get('/api/music', async (req, res) => {
           };
           
           // Mapear categoria para gênero
-          const genreMap: { [key: string]: string } = {
+          const genreMap: Record<string, string> = {
             'ambient': 'Ambient',
             'energetic': 'Electronic',
             'emotional': 'Orchestral',
@@ -505,7 +512,7 @@ app.get('/api/music', async (req, res) => {
           };
           
           // Mapear categoria para mood
-          const moodMap: { [key: string]: string } = {
+          const moodMap: Record<string, string> = {
             'ambient': 'Relaxante',
             'energetic': 'Energético',
             'emotional': 'Emocional',
@@ -519,7 +526,7 @@ app.get('/api/music', async (req, res) => {
             duration: Math.floor(Math.random() * 180) + 60, // Simular duração entre 1-4 min
             genre: genreMap[category],
             mood: moodMap[category],
-            url: `/api/music/file/${category}/${encodeURIComponent(file)}`,
+            url: `${apiBase}/music/file/${category}/${encodeURIComponent(file)}`,
             waveform: Array.from({ length: 50 }, () => Math.random() * 100),
             liked: false,
             category: categoryMap[category],

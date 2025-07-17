@@ -6,6 +6,7 @@ import { Input } from './ui/Input';
 import { Select } from './ui/Select';
 import { getMusic } from '../services/api';
 import { useToast } from './Toast';
+import api from '../services/api';
 
 interface MusicTrack {
   id: string;
@@ -35,6 +36,15 @@ export const MusicLibrary: React.FC<MusicLibraryProps> = ({ onMusicSelect, selec
   const audioRef = useRef<HTMLAudioElement>(null);
   const { showToast } = useToast();
 
+  // Função utilitária para garantir URL absoluta
+  const getAbsoluteMusicUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    // Pega a baseURL do axios instance
+    const base = api.defaults.baseURL?.replace(/\/$/, '') || '';
+    return `${base}${url}`;
+  };
+
   // Carregar músicas da API apenas uma vez
   useEffect(() => {
     if (tracks.length > 0) return; // Evita múltiplas requisições
@@ -42,6 +52,7 @@ export const MusicLibrary: React.FC<MusicLibraryProps> = ({ onMusicSelect, selec
       try {
         setLoading(true);
         const musicData = await getMusic();
+        console.log('Músicas recebidas da API:', musicData); // LOG ADICIONADO
         // Converter dados da API para o formato do componente
         const convertedTracks: MusicTrack[] = musicData.map((music: any) => ({
           id: music.id,
@@ -55,6 +66,7 @@ export const MusicLibrary: React.FC<MusicLibraryProps> = ({ onMusicSelect, selec
           liked: false,
           category: music.category
         }));
+        console.log('Tracks convertidas:', convertedTracks); // LOG ADICIONADO
         setTracks(convertedTracks);
         showToast(`🎵 ${convertedTracks.length} músicas carregadas`, 'success');
       } catch (error) {

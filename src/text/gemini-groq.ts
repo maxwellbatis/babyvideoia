@@ -465,6 +465,33 @@ export async function generateSocialMediaCaption(
   }
 }
 
+// Função para gerar legendas de redes sociais PERSONALIZADA
+export async function generateSocialMediaCaptionPersonalizada({
+  tema,
+  tipo,
+  publico,
+  cta,
+  plataforma,
+  apiKey
+}: {
+  tema: string;
+  tipo: string;
+  publico: string;
+  cta: string;
+  plataforma: string;
+  apiKey?: string;
+}): Promise<string> {
+  const prompt = `Crie uma legenda envolvente para ${plataforma} sobre "${tema}", para o público: ${publico}, no formato: ${tipo}. Use linguagem jovem, inclua hashtags relevantes e termine com o CTA: "${cta}". A legenda deve ser otimizada para ${plataforma}, pronta para copiar e colar.`;
+  if (apiKey) {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital para mães, bebês e negócios. Crie legendas otimizadas para redes sociais, sempre adaptando ao público, tipo de vídeo e CTA.', async (name: string) => {
+      if (name === 'GEMINI_KEY') return apiKey;
+      return await getCredential(name);
+    });
+  } else {
+    return generateWithFallback(prompt, 'Você é um especialista em marketing digital para mães, bebês e negócios. Crie legendas otimizadas para redes sociais, sempre adaptando ao público, tipo de vídeo e CTA.');
+  }
+}
+
 // Função para gerar conteúdo de marketing
 export async function generateBabyDiaryMarketingContent(
   tipo: 'influenciadora' | 'parceiro' | 'mae' | 'vendas',

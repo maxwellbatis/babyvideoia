@@ -920,12 +920,15 @@ Exemplo de resposta:
     if (payload.gerarLegenda) {
       log(`📱 Gerando legenda para ${payload.plataformaLegenda || 'Instagram'}...`);
       try {
-        const { generateSocialMediaCaption } = require('../text/gemini-groq');
-        legendaRedesSociais = await generateSocialMediaCaption(
-          payload.tema, 
-          payload.plataformaLegenda || 'instagram', 
+        const { generateSocialMediaCaptionPersonalizada } = require('../text/gemini-groq');
+        legendaRedesSociais = await generateSocialMediaCaptionPersonalizada({
+          tema: payload.tema,
+          tipo: payload.tipo,
+          publico: payload.publico,
+          cta: payload.cta || '',
+          plataforma: payload.plataformaLegenda || 'instagram',
           apiKey
-        );
+        });
         log(`✅ Legenda gerada: "${legendaRedesSociais.substring(0, 100)}..."`);
       } catch (e) {
         log(`⚠️ Erro ao gerar legenda: ${e.message}`);
