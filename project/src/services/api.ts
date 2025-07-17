@@ -39,21 +39,31 @@ export interface GenerateVideoRequest {
   tema: string;
   tipo: string;
   publico: string;
+  tom: string;
+  duracao: number;
   cenas: number;
   formato: string;
-  voz_elevenlabs?: string;
+  voz_elevenlabs: string;
   musica?: string;
-  imagensApp?: string[];
-  tom?: string;
-  useStableDiffusion?: boolean;
-  titulo?: string; // Novo campo para título do vídeo
-  gerarLegenda?: boolean; // Novo campo para gerar legenda de redes sociais
-  plataformaLegenda?: 'instagram' | 'facebook' | 'tiktok' | 'youtube'; // Novo campo para escolher plataforma
   configuracoes?: {
     duracao?: number;
     qualidade?: string;
     estilo?: string;
+    volumeMusica?: number;
+    fadeInMusica?: number;
+    fadeOutMusica?: number;
+    loopMusica?: boolean;
   };
+  imagensApp?: string[];
+  useStableDiffusion?: boolean;
+  titulo?: string;
+  gerarLegenda?: boolean;
+  plataformaLegenda?: string;
+  imagensComDescricao?: Array<{
+    url: string;
+    descricao: string;
+    categoria: 'funcionalidade' | 'painel_admin' | 'user_interface' | 'pagamento' | 'loja' | 'atividades' | 'diario' | 'outros';
+  }>;
 }
 
 export interface Video {
@@ -114,6 +124,18 @@ export interface AppImage {
   size: number;
   type: string;
   uploaded_at: string;
+}
+
+// Nova interface para imagens do usuário
+export interface UserImage {
+  id: string;
+  url: string;
+  descricao: string;
+  categoria: 'funcionalidade' | 'painel_admin' | 'user_interface' | 'pagamento' | 'loja' | 'atividades' | 'diario' | 'outros';
+  originalName: string;
+  size: number;
+  uploaded_at: string;
+  cloudinary_public_id: string;
 }
 
 export interface Music {
@@ -206,6 +228,32 @@ export const getAppImages = async (): Promise<AppImage[]> => {
 // Delete app image
 export const deleteAppImage = async (id: string): Promise<void> => {
   await api.delete(`/app-images/${id}`);
+};
+
+// Upload user image (nova função)
+export const uploadUserImage = async (file: File, descricao: string, categoria: string): Promise<UserImage> => {
+  const formData = new FormData();
+  formData.append('image', file);
+  formData.append('descricao', descricao);
+  formData.append('categoria', categoria);
+  
+  const response = await api.post('/upload-image', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+// Get user images (nova função)
+export const getUserImages = async (): Promise<UserImage[]> => {
+  const response = await api.get('/user-images');
+  return response.data;
+};
+
+// Delete user image (nova função)
+export const deleteUserImage = async (id: string): Promise<void> => {
+  await api.delete(`/user-images/${id}`);
 };
 
 export default api;

@@ -4,6 +4,8 @@ import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Select } from './ui/Select';
+import { getMusic } from '../services/api';
+import { useToast } from './Toast';
 
 interface MusicTrack {
   id: string;
@@ -24,62 +26,123 @@ interface MusicLibraryProps {
 }
 
 export const MusicLibrary: React.FC<MusicLibraryProps> = ({ onMusicSelect, selectedMusicId }) => {
-  const [tracks, setTracks] = useState<MusicTrack[]>([
-    {
-      id: '1',
-      name: 'Energetic Startup',
-      artist: 'AI Music',
-      duration: 120,
-      genre: 'Electronic',
-      mood: 'Energético',
-      url: '#',
-      waveform: Array.from({ length: 50 }, () => Math.random() * 100),
-      liked: false,
-      category: 'upbeat'
-    },
-    {
-      id: '2',
-      name: 'Calm Meditation',
-      artist: 'Zen Sounds',
-      duration: 180,
-      genre: 'Ambient',
-      mood: 'Relaxante',
-      url: '#',
-      waveform: Array.from({ length: 50 }, () => Math.random() * 60),
-      liked: true,
-      category: 'calm'
-    },
-    {
-      id: '3',
-      name: 'Corporate Success',
-      artist: 'Business Beats',
-      duration: 90,
-      genre: 'Corporate',
-      mood: 'Profissional',
-      url: '#',
-      waveform: Array.from({ length: 50 }, () => Math.random() * 80),
-      liked: false,
-      category: 'corporate'
-    },
-    {
-      id: '4',
-      name: 'Epic Adventure',
-      artist: 'Cinematic Pro',
-      duration: 150,
-      genre: 'Orchestral',
-      mood: 'Épico',
-      url: '#',
-      waveform: Array.from({ length: 50 }, () => Math.random() * 120),
-      liked: true,
-      category: 'cinematic'
-    }
-  ]);
-
+  const [tracks, setTracks] = useState<MusicTrack[]>([]);
+  const [loading, setLoading] = useState(true);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
   const audioRef = useRef<HTMLAudioElement>(null);
+  const { showToast } = useToast();
+
+  // Carregar músicas da API apenas uma vez
+  useEffect(() => {
+    if (tracks.length > 0) return; // Evita múltiplas requisições
+    const loadMusic = async () => {
+      try {
+        setLoading(true);
+        const musicData = await getMusic();
+        // Converter dados da API para o formato do componente
+        const convertedTracks: MusicTrack[] = musicData.map((music: any) => ({
+          id: music.id,
+          name: music.name,
+          artist: music.artist || 'Biblioteca Baby Video AI',
+          duration: music.duration,
+          genre: music.genre,
+          mood: music.mood,
+          url: music.url,
+          waveform: Array.from({ length: 50 }, () => Math.random() * 100),
+          liked: false,
+          category: music.category
+        }));
+        setTracks(convertedTracks);
+        showToast(`🎵 ${convertedTracks.length} músicas carregadas`, 'success');
+      } catch (error) {
+        console.error('Erro ao carregar músicas:', error);
+        showToast('Erro ao carregar biblioteca de músicas', 'error');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadMusic();
+  }, []);
+
+  const handlePlay = async (track: MusicTrack) => {
+    if (!audioRef.current) return;
+    
+    try {
+      if (playingId === track.id) {
+        // Pausar música atual
+        audioRef.current.pause();
+        setPlayingId(null);
+        console.log('🎵 Música pausada:', track.name);
+      } else {
+        // Parar música anterior se houver
+        if (playingId) {
+          audioRef.current.pause();
+        }
+        
+        // Configurar e tocar nova música
+        audioRef.current.src = track.url;
+        audioRef.current.currentTime = 0;
+        audioRef.current.volume = 0.5; // Volume padrão 50%
+        
+        console.log('🎵 Tocando música:', track.name, 'URL:', track.url);
+        
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              setPlayingId(track.id);
+              console.log('✅ Música iniciada com sucesso');
+            })
+            .catch((error) => {
+              console.error('❌ Erro ao tocar música:', error);
+              setPlayingId(null);
+            });
+        }
+      }
+    } catch (error) {
+      console.error('❌ Erro no controle de áudio:', error);
+      setPlayingId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+    
+    const handleEnded = () => {
+      console.log('🎵 Música terminou');
+      setPlayingId(null);
+    };
+    
+    const handleError = (error: any) => {
+      console.error('❌ Erro no elemento de áudio:', error);
+      setPlayingId(null);
+    };
+    
+    const handleLoadStart = () => {
+      console.log('🔄 Carregando música...');
+    };
+    
+    const handleCanPlay = () => {
+      console.log('✅ Música pronta para tocar');
+    };
+    
+    audioRef.current.addEventListener('ended', handleEnded);
+    audioRef.current.addEventListener('error', handleError);
+    audioRef.current.addEventListener('loadstart', handleLoadStart);
+    audioRef.current.addEventListener('canplay', handleCanPlay);
+    
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.removeEventListener('ended', handleEnded);
+        audioRef.current.removeEventListener('error', handleError);
+        audioRef.current.removeEventListener('loadstart', handleLoadStart);
+        audioRef.current.removeEventListener('canplay', handleCanPlay);
+      }
+    };
+  }, []);
 
   const categories = [
     { value: 'all', label: '🎵 Todas as Categorias' },
@@ -106,14 +169,6 @@ export const MusicLibrary: React.FC<MusicLibraryProps> = ({ onMusicSelect, selec
     
     return matchesSearch && matchesCategory && matchesGenre;
   });
-
-  const togglePlay = (trackId: string) => {
-    if (playingId === trackId) {
-      setPlayingId(null);
-    } else {
-      setPlayingId(trackId);
-    }
-  };
 
   const toggleLike = (trackId: string) => {
     setTracks(prev => prev.map(track => 
@@ -185,109 +240,146 @@ export const MusicLibrary: React.FC<MusicLibraryProps> = ({ onMusicSelect, selec
         />
       </div>
 
+      {/* Botão de Teste de Áudio */}
+      <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900 rounded-lg border border-blue-200 dark:border-blue-700">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="font-semibold text-blue-900 dark:text-blue-100">🔊 Teste de Áudio</h4>
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              Clique para testar se o áudio está funcionando
+            </p>
+          </div>
+          <Button
+            onClick={() => {
+              if (audioRef.current) {
+                console.log('🎵 Testando áudio...');
+                console.log('Elemento audio:', audioRef.current);
+                console.log('Estado playingId:', playingId);
+                console.log('Tracks carregadas:', tracks.length);
+                if (tracks.length > 0) {
+                  console.log('Primeira música:', tracks[0]);
+                  handlePlay(tracks[0]);
+                }
+              }
+            }}
+            size="sm"
+            variant="outline"
+          >
+            🎵 Testar Áudio
+          </Button>
+        </div>
+      </div>
+
       {/* Lista de Músicas */}
       <div className="space-y-3 max-h-96 overflow-y-auto">
-        {filteredTracks.map((track) => (
-          <div
-            key={track.id}
-            className={`p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer ${
-              selectedMusicId === track.id
-                ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 shadow-lg'
-                : 'border-gray-200 dark:border-gray-600 hover:border-purple-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-            }`}
-            onClick={() => onMusicSelect(track)}
-          >
-            <div className="flex items-center space-x-4">
-              {/* Play Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  togglePlay(track.id);
-                }}
-                className="p-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full text-white hover:from-purple-600 hover:to-pink-600 transition-all duration-200 transform hover:scale-110"
-              >
-                {playingId === track.id ? (
-                  <Pause className="w-5 h-5" />
-                ) : (
-                  <Play className="w-5 h-5" />
-                )}
-              </button>
-
-              {/* Waveform Visualization */}
-              <div className="flex items-end space-x-1 flex-1 h-12">
-                {track.waveform.slice(0, 30).map((height, index) => (
-                  <div
-                    key={index}
-                    className={`w-1 bg-gradient-to-t transition-all duration-300 ${
-                      playingId === track.id
-                        ? 'from-purple-400 to-purple-600 animate-pulse'
-                        : 'from-gray-300 to-gray-500 dark:from-gray-600 dark:to-gray-400'
-                    }`}
-                    style={{ height: `${Math.max(height * 0.4, 8)}px` }}
-                  />
-                ))}
-              </div>
-
-              {/* Track Info */}
-              <div className="text-right">
-                <div className="flex items-center space-x-2 mb-1">
-                  <span className="text-lg">{getCategoryEmoji(track.category)}</span>
-                  <h4 className="font-semibold text-gray-900 dark:text-white">
-                    {track.name}
-                  </h4>
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {track.artist} • {track.genre}
-                </p>
-                <div className="flex items-center space-x-3 mt-2">
-                  <span className="text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 px-2 py-1 rounded-full">
-                    {track.mood}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {formatDuration(track.duration)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex flex-col space-y-2">
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+            <p className="text-gray-500 dark:text-gray-400">
+              Carregando biblioteca musical...
+            </p>
+          </div>
+        ) : filteredTracks.length > 0 ? (
+          filteredTracks.map((track) => (
+            <div
+              key={track.id}
+              className={`p-4 rounded-xl border-2 transition-all duration-300 cursor-pointer ${
+                selectedMusicId === track.id
+                  ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 shadow-lg'
+                  : 'border-gray-200 dark:border-gray-600 hover:border-purple-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+              }`}
+              onClick={() => onMusicSelect(track)}
+            >
+              <div className="flex items-center space-x-4">
+                {/* Play Button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleLike(track.id);
+                    handlePlay(track);
                   }}
-                  className={`p-2 rounded-lg transition-colors ${
-                    track.liked
-                      ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
-                      : 'text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
+                  className="p-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full text-white hover:from-purple-600 hover:to-pink-600 transition-all duration-200 transform hover:scale-110"
                 >
-                  <Heart className={`w-4 h-4 ${track.liked ? 'fill-current' : ''}`} />
+                  {playingId === track.id ? (
+                    <Pause className="w-5 h-5" />
+                  ) : (
+                    <Play className="w-5 h-5" />
+                  )}
                 </button>
-                
-                <button
-                  onClick={(e) => e.stopPropagation()}
-                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
+
+                {/* Waveform Visualization */}
+                <div className="flex items-end space-x-1 flex-1 h-12">
+                  {track.waveform.slice(0, 30).map((height, index) => (
+                    <div
+                      key={index}
+                      className={`w-1 bg-gradient-to-t transition-all duration-300 ${
+                        playingId === track.id
+                          ? 'from-purple-400 to-purple-600 animate-pulse'
+                          : 'from-gray-300 to-gray-500 dark:from-gray-600 dark:to-gray-400'
+                      }`}
+                      style={{ height: `${Math.max(height * 0.4, 8)}px` }}
+                    />
+                  ))}
+                </div>
+
+                {/* Track Info */}
+                <div className="text-right">
+                  <div className="flex items-center space-x-2 mb-1">
+                    <span className="text-lg">{getCategoryEmoji(track.category)}</span>
+                    <h4 className="font-semibold text-gray-900 dark:text-white">
+                      {track.name}
+                    </h4>
+                  </div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {track.artist} • {track.genre}
+                  </p>
+                  <div className="flex items-center space-x-3 mt-2">
+                    <span className="text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 px-2 py-1 rounded-full">
+                      {track.mood}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {formatDuration(track.duration)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex flex-col space-y-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleLike(track.id);
+                    }}
+                    className={`p-2 rounded-lg transition-colors ${
+                      track.liked
+                        ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20'
+                        : 'text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <Heart className={`w-4 h-4 ${track.liked ? 'fill-current' : ''}`} />
+                  </button>
+                  
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
+          ))
+        ) : (
+          <div className="text-center py-8">
+            <Music className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-50 dark:text-gray-400">
+              Nenhuma música encontrada
+            </p>
+            <p className="text-sm text-gray-40 dark:text-gray-500 mt-2">
+              Tente ajustar os filtros ou fazer upload de novas músicas
+            </p>
           </div>
-        ))}
+        )}
       </div>
-
-      {filteredTracks.length === 0 && (
-        <div className="text-center py-8">
-          <Music className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500 dark:text-gray-400">
-            Nenhuma música encontrada
-          </p>
-          <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-            Tente ajustar os filtros ou fazer upload de novas músicas
-          </p>
-        </div>
-      )}
 
       <audio ref={audioRef} />
     </Card>

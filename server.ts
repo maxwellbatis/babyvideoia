@@ -460,6 +460,352 @@ app.post('/api/test/colab', async (req, res) => {
   }
 });
 
+// Rotas para gerenciar músicas da biblioteca
+app.get('/api/music', async (req, res) => {
+  try {
+    logServer('Listando músicas da biblioteca...');
+    
+    const musicDir = path.join(__dirname, 'assets', 'music');
+    const categories = ['ambient', 'energetic', 'emotional', 'corporate'];
+    const musicLibrary = [];
+    
+    for (const category of categories) {
+      const categoryPath = path.join(musicDir, category);
+      
+      if (fs.existsSync(categoryPath)) {
+        const files = fs.readdirSync(categoryPath).filter(file => 
+          file.endsWith('.mp3') || file.endsWith('.wav') || file.endsWith('.m4a')
+        );
+        
+        for (const file of files) {
+          const filePath = path.join(categoryPath, file);
+          const stats = fs.statSync(filePath);
+          
+          // Extrair informações do nome do arquivo
+          const fileName = path.parse(file).name;
+          const name = fileName.replace(/-/g, ' ').replace(/\d+$/, '').trim();
+          
+          // Mapear categoria para categoria do frontend
+          const categoryMap = {
+            'ambient': 'calm',
+            'energetic': 'upbeat', 
+            'emotional': 'dramatic',
+            'corporate': 'corporate'
+          };
+          
+          // Mapear categoria para gênero
+          const genreMap = {
+            'ambient': 'Ambient',
+            'energetic': 'Electronic',
+            'emotional': 'Orchestral',
+            'corporate': 'Corporate'
+          };
+          
+          // Mapear categoria para mood
+          const moodMap = {
+            'ambient': 'Relaxante',
+            'energetic': 'Energético',
+            'emotional': 'Emocional',
+            'corporate': 'Profissional'
+          };
+          
+          musicLibrary.push({
+            id: `${category}_${fileName}`,
+            name: name.charAt(0).toUpperCase() + name.slice(1),
+            artist: 'Biblioteca Baby Video AI',
+            duration: Math.floor(Math.random() * 180) + 60, // Simular duração entre 1-4 min
+            genre: genreMap[category],
+            mood: moodMap[category],
+            url: `/api/music/file/${category}/${encodeURIComponent(file)}`,
+            waveform: Array.from({ length: 50 }, () => Math.random() * 100),
+            liked: false,
+            category: categoryMap[category],
+            size: stats.size,
+            uploaded_at: stats.mtime.toISOString()
+          });
+        }
+      }
+    }
+    
+    logServer(`✅ ${musicLibrary.length} músicas encontradas na biblioteca`);
+    res.json(musicLibrary);
+  } catch (error) {
+    logServer('❌ Erro ao listar músicas:', error);
+    res.status(500).json({ error: 'Erro ao carregar biblioteca de músicas' });
+  }
+});
+
+// Rota para servir arquivos de música
+app.get('/api/music/file/:category/:filename', (req, res) => {
+  try {
+    const { category, filename } = req.params;
+    const musicPath = path.join(__dirname, 'assets', 'music', category, decodeURIComponent(filename));
+    
+    if (!fs.existsSync(musicPath)) {
+      return res.status(404).json({ error: 'Arquivo de música não encontrado' });
+    }
+    
+    // Configurar headers para streaming de áudio
+    const stat = fs.statSync(musicPath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+    
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunksize = (end - start) + 1;
+      const file = fs.createReadStream(musicPath, { start, end });
+      
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunksize,
+        'Content-Type': 'audio/mpeg',
+      });
+      file.pipe(res);
+    } else {
+      res.writeHead(200, {
+        'Content-Length': fileSize,
+        'Content-Type': 'audio/mpeg',
+      });
+      fs.createReadStream(musicPath).pipe(res);
+    }
+  } catch (error) {
+    logServer('❌ Erro ao servir arquivo de música:', error);
+    res.status(500).json({ error: 'Erro ao servir arquivo de música' });
+  }
+});
+
+// Rota para upload de música (mantém compatibilidade)
+app.post('/api/upload-music', upload.single('music'), async (req, res) => {
+  try {
+    logServer('Recebendo upload de música...');
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+    }
+    
+    const file = req.file;
+    const stats = fs.statSync(file.path);
+    
+    // Mover arquivo para pasta de músicas (opcional)
+    const musicDir = path.join(__dirname, 'assets', 'music', 'custom');
+    if (!fs.existsSync(musicDir)) {
+      fs.mkdirSync(musicDir, { recursive: true });
+    }
+    
+    const newPath = path.join(musicDir, file.originalname);
+    fs.renameSync(file.path, newPath);
+    
+    const musicData = {
+      id: `custom_${Date.now()}`,
+      name: path.parse(file.originalname).name,
+      url: `/api/music/file/custom/${encodeURIComponent(file.originalname)}`,
+      duration: Math.floor(Math.random() * 180) + 60,
+      size: stats.size,
+      uploaded_at: new Date().toISOString()
+    };
+    
+    logServer('✅ Música enviada com sucesso:', musicData.name);
+    res.json(musicData);
+  } catch (error) {
+    logServer('❌ Erro no upload de música:', error);
+    res.status(500).json({ error: 'Erro ao fazer upload da música' });
+  }
+});
+
+// Rota para deletar música (mantém compatibilidade)
+app.delete('/api/music/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    logServer(`Deletando música: ${id}`);
+    
+    // Por enquanto, apenas retorna sucesso (músicas da biblioteca não podem ser deletadas)
+    res.json({ success: true, message: 'Música removida com sucesso' });
+  } catch (error) {
+    logServer('❌ Erro ao deletar música:', error);
+    res.status(500).json({ error: 'Erro ao deletar música' });
+  }
+});
+
+// Rotas para gerenciar imagens do usuário
+app.post('/api/upload-image', upload.single('image'), async (req, res) => {
+  try {
+    logServer('Recebendo upload de imagem...');
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+    }
+    
+    const file = req.file;
+    const { descricao, categoria } = req.body;
+    
+    if (!descricao || !categoria) {
+      return res.status(400).json({ error: 'Descrição e categoria são obrigatórias' });
+    }
+    
+    logServer('Arquivo recebido:', file.originalname, 'Descrição:', descricao, 'Categoria:', categoria);
+    
+    // Upload para Cloudinary
+    const cloudinary = require('cloudinary').v2;
+    const { getCredential } = require('./src/utils/credentials');
+    const cloudName = await getCredential('CLOUDINARY_CLOUD_NAME');
+    const apiKey = await getCredential('CLOUDINARY_API_KEY');
+    const apiSecret = await getCredential('CLOUDINARY_API_SECRET');
+    if (!cloudName || !apiKey || !apiSecret) {
+      return res.status(500).json({ error: 'Credenciais do Cloudinary não configuradas' });
+    }
+    
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret
+    });
+    
+    // Upload da imagem
+    const result = await cloudinary.uploader.upload(file.path, {     folder: 'babyvideoia/user-images',
+      public_id: `user_image_${Date.now()}`,
+      overwrite: true
+    });
+    
+    // Salvar informações da imagem no JSON
+    const imageData = {
+      id: `img_${Date.now()}`,
+      url: result.secure_url,
+      descricao: descricao,
+      categoria: categoria,
+      originalName: file.originalname,
+      size: file.size,
+      uploaded_at: new Date().toISOString(),
+      cloudinary_public_id: result.public_id
+    };
+    
+    // Carregar imagens existentes
+    const imagesFile = path.join(__dirname, 'user-images.json');
+    let images = [];
+    
+    if (fs.existsSync(imagesFile)) {
+      const fileContent = fs.readFileSync(imagesFile, 'utf8');
+      images = JSON.parse(fileContent);
+    }
+    
+    // Adicionar nova imagem
+    images.push(imageData);
+    
+    // Salvar arquivo atualizado
+    fs.writeFileSync(imagesFile, JSON.stringify(images, null, 2));
+    
+    // Limpar arquivo temporário
+    fs.unlinkSync(file.path);
+    
+    logServer('✅ Imagem enviada com sucesso:', imageData.id);
+    res.json(imageData);
+    
+  } catch (error) {
+    logServer('❌ Erro no upload de imagem:', error);
+    res.status(500).json({ error: 'Erro ao fazer upload da imagem' });
+  }
+});
+
+// Rota para listar imagens do usuário
+app.get('/api/user-images', async (req, res) => {
+  try {
+    logServer('Listando imagens do usuário...');
+    const imagesFile = path.join(__dirname, 'user-images.json');
+    let images = [];
+    
+    if (fs.existsSync(imagesFile)) {
+      const fileContent = fs.readFileSync(imagesFile, 'utf8');
+      images = JSON.parse(fileContent);
+    }
+    
+    logServer(`✅ ${images.length} imagens encontradas`);
+    res.json(images);
+    
+  } catch (error) {
+    logServer('❌ Erro ao listar imagens:', error);
+    res.status(500).json({ error: 'Erro ao carregar imagens do usuário' });
+  }
+});
+
+// Rota para deletar imagem do usuário
+app.delete('/api/user-images/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    logServer(`Deletando imagem: ${id}`);
+    
+    const imagesFile = path.join(__dirname, 'user-images.json');
+    let images = [];
+    
+    if (fs.existsSync(imagesFile)) {
+      const fileContent = fs.readFileSync(imagesFile, 'utf8');
+      images = JSON.parse(fileContent);
+    }
+    
+    // Encontrar imagem para deletar
+    const imageIndex = images.findIndex(img => img.id === id);
+    if (imageIndex === -1) {
+      return res.status(404).json({ error: 'Imagem não encontrada' });
+    }
+    
+    const image = images[imageIndex];
+    
+    // Deletar do Cloudinary
+    try {
+      const cloudinary = require('cloudinary').v2;
+      const { getCredential } = require('./src/utils/credentials');
+      
+      const cloudName = await getCredential('CLOUDINARY_CLOUD_NAME');
+      const apiKey = await getCredential('CLOUDINARY_API_KEY');
+      const apiSecret = await getCredential('CLOUDINARY_API_SECRET');
+      
+      if (cloudName && apiKey && apiSecret) {
+        cloudinary.config({
+          cloud_name: cloudName,
+          api_key: apiKey,
+          api_secret: apiSecret
+        });
+        
+        await cloudinary.uploader.destroy(image.cloudinary_public_id);
+        logServer('✅ Imagem deletada do Cloudinary');
+      }
+    } catch (cloudinaryError) {
+      logServer('⚠️ Erro ao deletar do Cloudinary:', cloudinaryError);
+    }
+    
+    // Remover da lista
+    images.splice(imageIndex, 1);
+    
+    // Salvar arquivo atualizado
+    fs.writeFileSync(imagesFile, JSON.stringify(images, null, 2));
+    
+    logServer('✅ Imagem deletada com sucesso');
+    res.json({ success: true, message: 'Imagem removida com sucesso' });
+    
+  } catch (error) {
+    logServer('❌ Erro ao deletar imagem:', error);
+    res.status(500).json({ error: 'Erro ao deletar imagem' });
+  }
+});
+
+app.post('/api/chat', async (req, res) => {
+  const { message } = req.body;
+  // Aqui você pode integrar com IA real, mas para teste:
+  res.json({
+    id: Date.now().toString(),
+    message: `Resposta simulada da IA para: "${message}"`,
+    type: 'assistant',
+    timestamp: new Date().toISOString(),
+    suggestions: [
+      'Quero mais ideias de temas',
+      'Sugira uma música para este vídeo',
+      'Que tipo de imagem usar?',
+      'Como estruturar o roteiro?'
+    ]
+  });
+});
+
 app.listen(port, () => {
   console.log(`🚀 Novo backend VSL rodando em http://localhost:${port}`);
 });

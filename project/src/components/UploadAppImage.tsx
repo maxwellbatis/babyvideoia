@@ -1,196 +1,468 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Image, Trash2, Eye } from 'lucide-react';
+import { Upload, Trash2, Plus, Image as ImageIcon } from 'lucide-react';
 import { Card } from './ui/Card';
-import { Button } from './ui/Button';
-import { uploadAppImage, getAppImages, deleteAppImage, AppImage } from '../services/api';
+import { Select } from './ui/Select';
+import { TextArea } from './ui/TextArea';
+import { uploadUserImage, getUserImages, deleteUserImage, UserImage } from '../services/api';
 import { useToast } from './Toast';
+import Modal from './ui/Modal'; // Supondo que exista um componente Modal, se não, crie um simples inline
 
-interface UploadAppImageProps {
-  onImageSelect: (image: AppImage) => void;
-  selectedImageIds?: string[];
+export interface ImagemComDescricao {
+  id: string;
+  url: string;
+  descricao: string;
+  categoria: 'funcionalidade' | 'painel_admin' | 'user_interface' | 'pagamento' | 'loja' | 'atividades' | 'diario' | 'outros';  file?: File;
 }
 
-export const UploadAppImage: React.FC<UploadAppImageProps> = ({ onImageSelect, selectedImageIds = [] }) => {
-  const [images, setImages] = useState<AppImage[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const { showToast } = useToast();
+interface UploadAppImageProps {
+  imagens: ImagemComDescricao[];
+  onImagensChange: (imagens: ImagemComDescricao[]) => void;
+}
 
+export const UploadAppImage: React.FC<UploadAppImageProps> = ({ imagens, onImagensChange }) => {
+  const [categorias] = useState([
+    { value: 'funcionalidade', label: '🔧 Funcionalidade do App' },
+    { value: 'painel_admin', label: '⚙️ Painel Administrativo' },
+    { value: 'user_interface', label: '📱 Interface do Usuário' },
+    { value: 'pagamento', label: '💳 Sistema de Pagamento' },
+    { value: 'loja', label: '🛒Loja/Produtos' },
+    { value: 'atividades', label: '🎯 Atividades e Marcos' },
+    { value: 'diario', label: '📖 Diário e Memórias' },
+    { value: 'outros', label: '📋 Outros' }
+  ]);
+
+  const [userImages, setUserImages] = useState<UserImage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const { showToast } = useToast();
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [pendingDescricao, setPendingDescricao] = useState('');
+  const [pendingCategoria, setPendingCategoria] = useState('funcionalidade');
+
+  // Carregar imagens do usuário
   useEffect(() => {
-    loadImages();
+    loadUserImages();
   }, []);
 
-  const loadImages = async () => {
+  const loadUserImages = async () => {
     try {
-      const data = await getAppImages();
-      setImages(data);
+      const images = await getUserImages();
+      setUserImages(images);
     } catch (error) {
-      showToast('Erro ao carregar imagens', 'error');
+      console.error('Erro ao carregar imagens:', error);
     }
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    if (files.length === 0) return;
-
+  const handleFileUpload = async (files: FileList) => {
+    console.log('📁 Processando arquivos:', files.length);
+    
     for (const file of files) {
       if (!file.type.startsWith('image/')) {
         showToast('Por favor, selecione apenas arquivos de imagem', 'error');
         continue;
       }
 
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        showToast(`Arquivo ${file.name} muito grande. Limite de 5MB`, 'error');
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        showToast('Arquivo muito grande. Limite de 10MB', 'error');
         continue;
       }
 
       setLoading(true);
       try {
-        const uploadedImage = await uploadAppImage(file);
-        setImages(prev => [...prev, uploadedImage]);
-        showToast(`Imagem ${file.name} enviada com sucesso!`, 'success');
-        await loadImages();
-        if (onImageSelect) onImageSelect(uploadedImage); // Chame o callback para atualizar seleção no VideoForm
+        // Upload para Cloudinary via backend
+        const uploadedImage = await uploadUserImage(file, 'Imagem do app', 'funcionalidade');
+        
+        // Adicionar à lista de imagens do usuário
+        setUserImages(prev => [...prev, uploadedImage]);
+        
+        showToast('Imagem enviada com sucesso!', 'success');
       } catch (error) {
-        showToast(`Erro ao enviar ${file.name}`, 'error');
+        console.error('Erro no upload:', error);
+        showToast('Erro ao enviar imagem', 'error');
       } finally {
         setLoading(false);
       }
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (!file.type.startsWith('image/')) {
+        showToast('Por favor, selecione apenas arquivos de imagem', 'error');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showToast('Arquivo muito grande. Limite de 10MB', 'error');
+        return;
+      }
+      setPendingFile(file);
+      setPendingDescricao('');
+      setPendingCategoria('funcionalidade');
+      const reader = new FileReader();
+      reader.onload = (ev) => setPendingPreview(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSavePending = async () => {
+    if (!pendingFile) return;
+    if (!pendingDescricao.trim()) {
+      showToast('Preencha a descrição da imagem', 'warning');
+      return;
+    }
+    setLoading(true);
+    try {
+      const uploadedImage = await uploadUserImage(pendingFile, pendingDescricao, pendingCategoria);
+      setUserImages(prev => [...prev, uploadedImage]);
+      showToast('Imagem enviada com sucesso!', 'success');
+      setPendingFile(null);
+      setPendingPreview(null);
+      setPendingDescricao('');
+      setPendingCategoria('funcionalidade');
+    } catch (error) {
+      showToast('Erro ao enviar imagem', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelPending = () => {
+    setPendingFile(null);
+    setPendingPreview(null);
+    setPendingDescricao('');
+    setPendingCategoria('funcionalidade');
+  };
+
+  const handleDeleteUserImage = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir esta imagem?')) return;
 
     try {
-      await deleteAppImage(id);
-      setImages(prev => prev.filter(img => img.id !== id));
+      await deleteUserImage(id);
+      setUserImages(prev => prev.filter(img => img.id !== id));
       showToast('Imagem excluída com sucesso!', 'success');
     } catch (error) {
       showToast('Erro ao excluir imagem', 'error');
     }
   };
 
-  const formatFileSize = (bytes: number) => {
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    if (bytes === 0) return '0 Bytes';
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+  // Função para selecionar imagem da galeria (apenas imagens com url Cloudinary)
+  const selectImageFromGallery = (userImage: UserImage) => {
+    // Só permite adicionar se o url for Cloudinary (começa com http)
+    if (!userImage.url.startsWith('http')) {
+      showToast('Aguarde o upload terminar antes de adicionar', 'warning');
+      return;
+    }
+    const novaImagem: ImagemComDescricao = {
+      id: userImage.id,
+      url: userImage.url, // sempre Cloudinary
+      descricao: userImage.descricao,
+      categoria: userImage.categoria
+    };
+    // Verificar se já não está selecionada
+    const exists = imagens.find(img => img.id === userImage.id);
+    if (!exists) {
+      onImagensChange([...imagens, novaImagem]);
+      showToast('Imagem adicionada ao vídeo!', 'success');
+    } else {
+      showToast('Imagem já está selecionada', 'info');
+    }
   };
+
+  const updateImagem = (id: string, field: keyof ImagemComDescricao, value: string) => {
+    const imagensAtualizadas = imagens.map(img => 
+      img.id === id ? { ...img, [field]: value } : img
+    );
+    onImagensChange(imagensAtualizadas);
+  };
+
+  const removeImagem = (id: string) => {
+    const imagensAtualizadas = imagens.filter(img => img.id !== id);
+    onImagensChange(imagensAtualizadas);
+  };
+
+  const getCategoriaEmoji = (categoria: 'funcionalidade' | 'painel_admin' | 'user_interface' | 'pagamento' | 'loja' | 'atividades' | 'diario' | 'outros') => {
+    const emojis = {
+      funcionalidade: '🔧',
+      painel_admin: '⚙️',
+      user_interface: '📱',
+      pagamento: '💳',
+      loja: '🛒',
+      atividades: '🎯',
+      diario: '📖',
+      outros: '📋'
+    };
+    return emojis[categoria] || '📋';
+  };
+
+  const filteredUserImages = userImages.filter(image => {
+    const matchesSearch = image.descricao.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         image.originalName.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || image.categoria === selectedCategory;
+    
+    return matchesSearch && matchesCategory;
+  });
 
   return (
     <Card>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
-          <Image className="w-5 h-5 text-indigo-600" />
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Imagens do App
-          </h3>
-        </div>
-        
-        <label className="relative">
+      <div className="space-y-6">
+        {/* Área de Upload */}
+        <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-purple-400 dark:hover:border-purple-500 transition-colors">
+          <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />     <h3 className="text-lg font-semibold text-gray-90 dark:text-white mb-2">
+  📸 Upload de Imagens do App
+</h3>
+<p className="text-sm text-gray-60 dark:text-gray-400 mb-4">
+  Arraste imagens aqui ou clique no botão para selecionar
+</p>
+          
           <input
             type="file"
             accept="image/*"
-            multiple
-            onChange={handleFileUpload}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            disabled={loading}
+            multiple={false}
+            onChange={handleFileInput}
+            id="file-upload"
+            className="hidden"
+            disabled={loading || !!pendingFile}
           />
-          <Button
-            icon={Upload}
-            size="sm"
-            loading={loading}
-            disabled={loading}
+          <label 
+            htmlFor="file-upload"
+            className={`inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg cursor-pointer transition-colors ${loading || pendingFile ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
-            Adicionar Imagens
-          </Button>
-        </label>
-      </div>
-
-      {images.length === 0 ? (
-        <div className="text-center py-8">
-          <Image className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500 dark:text-gray-400">
-            Nenhuma imagem enviada ainda
-          </p>
-          <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
-            Adicione imagens para usar nos seus vídeos
-          </p>
+            <Plus className="w-4 h-4 mr-2" />          {loading ? 'Enviando...' : 'Selecionar Imagem'}
+          </label>
         </div>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {images.map((image) => (
-            <div
-              key={image.id}
-              className={`relative group rounded-lg overflow-hidden border-2 transition-all duration-200 ${
-                selectedImageIds.includes(image.id)
-                  ? 'border-indigo-500 ring-2 ring-indigo-200'
-                  : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
-              }`}
+
+        {/* Modal de edição antes do upload */}
+        {pendingFile && (
+          <Modal isOpen={!!pendingFile} onClose={handleCancelPending}>
+            <div className="p-6 space-y-4">
+              <h3 className="text-lg font-bold mb-2">Editar Imagem Antes do Upload</h3>
+              {pendingPreview && (
+                <img src={pendingPreview} alt="Preview" className="w-full h-48 object-contain rounded-lg border mb-2" />
+              )}
+              <div>
+                <label className="block text-sm font-medium mb-1">Descrição *</label>
+                <TextArea
+                  value={pendingDescricao}
+                  onChange={e => setPendingDescricao(e.target.value)}
+                  rows={3}
+                  className="w-full"
+                  placeholder="Descreva o que a imagem mostra para que a IA use no contexto do roteiro"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Categoria</label>
+                <Select
+                  value={pendingCategoria}
+                  onChange={e => setPendingCategoria(e.target.value)}
+                  options={categorias}
+                />
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={handleCancelPending}
+                  className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 text-gray-800"
+                  disabled={loading}
+                >Cancelar</button>
+                <button
+                  onClick={handleSavePending}
+                  className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white font-semibold"
+                  disabled={loading || !pendingDescricao.trim()}
+                >Salvar</button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {/* Galeria de Imagens do Usuário */}
+        <div className="space-y-4">     <h4 className="font-semibold text-gray-90 dark:text-white">
+           🖼️ Galeria de Imagens ({userImages.length})
+          </h4>
+          
+          {/* Filtros da Galeria */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input
+              type="text"
+              placeholder="🔍 Buscar por descrição..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-70 dark:text-white"
+            />
+            
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-70 dark:text-white"
             >
-              <img
-                src={image.url}
-                alt={image.name}
-                className="w-full h-32 object-cover"
-              />
+              <option value="all">🎵 Todas as Categorias</option>
+              {categorias.map(cat => (
+                <option key={cat.value} value={cat.value}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Lista de Imagens da Galeria */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+            {filteredUserImages.map((image) => {
+              const isSelected = imagens.some(img => img.id === image.id);
               
-              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity duration-200 flex items-center justify-center">
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-2">
+              return (
+                <div
+                  key={image.id}
+                  className={`relative p-3 rounded-lg border-2 transition-all duration-300 cursor-pointer ${
+                    isSelected
+                      ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
+                      : 'border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:bg-gray-700/50'
+                  }`}
+                  onClick={() => selectImageFromGallery(image)}
+                >
+                  {/* Badge de seleção */}
+                  <div className="absolute top-2 right-2">
+                    {isSelected ? (
+                      <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs">✓</span>
+                      </div>
+                    ) : (
+                      <div className="w-5 h-5 bg-gray-300 rounded-full"></div>
+                    )}
+                  </div>
+
+                  {/* Preview da imagem */}
+                  <img
+                    src={image.url}
+                    alt={image.descricao}
+                    className="w-full h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-600 mb-2"
+                  />
+
+                  {/* Informações da imagem */}
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-1">
+                      <span className="text-sm">{getCategoriaEmoji(image.categoria)}</span>
+                      <h5 className="font-medium text-gray-90 dark:text-white text-sm truncate">
+                        {image.originalName}
+                      </h5>
+                    </div>
+                    
+                    <p className="text-xs text-gray-60 dark:text-gray-400">
+                      {image.descricao || 'Sem descrição'}
+                    </p>
+                  </div>
+
+                  {/* Botão de deletar */}
                   <button
-                    onClick={() => setPreviewImage(image.url)}
-                    className="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteUserImage(image.id);
+                    }}
+                    className="absolute top-2 left-2 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full transition-colors"
                   >
-                    <Eye className="w-4 h-4 text-gray-600" />
+                    <Trash2 className="w-3 h-3" />
                   </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {filteredUserImages.length === 0 && (
+            <div className="text-center py-8">
+              <ImageIcon className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-50 dark:text-gray-400">
+                {searchTerm || selectedCategory !== 'all' 
+                  ? 'Nenhuma imagem encontrada com os filtros atuais'
+                  : 'Nenhuma imagem na galeria ainda'
+                }
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Dicas de Uso */}
+        <div className="bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+          <h5 className="font-medium text-blue-90 dark:text-blue-100 mb-2">💡 Dicas de Uso:</h5>
+          <ul className="text-sm text-blue-70 dark:text-blue-300 space-y-1">
+            <li>• <strong>Para mães:</strong> Use prints de funcionalidades como "Memórias Especiais", "Marcos do Desenvolvimento, Linha do Tempo"</li>
+            <li>• <strong>Para parceiros:</strong> Use prints do Painel Admin, Métricas de Vendas, Gestão de Assinaturas</li>
+            <li>• <strong>Para influenciadoras:</strong> Use prints da Interface do App, Funcionalidades Premium, Compartilhamento</li>
+            <li>• <strong>Descrição:</strong> Seja específico: Tela de cadastro simples e rápida em vez de apenas "Cadastro"</li>
+          </ul>
+        </div>
+
+        {/* Lista de Imagens Selecionadas */}
+        {imagens.length > 0 && (
+          <div className="space-y-4">     <h4 className="font-semibold text-gray-90 dark:text-white">
+              📋 Imagens Selecionadas para o Vídeo ({imagens.length})
+            </h4>
+            
+            {imagens.map((imagem, index) => (
+              <div key={imagem.id} className="border border-gray-200 dark:border-gray-600 rounded-lg p-4">
+                <div className="flex items-start space-x-4">
+                  {/* Preview da Imagem */}
+                  <div className="flex-shrink-0">
+                    <img
+                      src={imagem.url}
+                      alt={`Imagem ${index + 1}`}
+                      className="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-600"
+                    />
+                  </div>
+
+                  {/* Campos de Edição */}
+                  <div className="flex-1 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-70 dark:text-gray-300 mb-1">
+                          Categoria
+                        </label>
+                        <Select
+                          value={imagem.categoria}
+                          onChange={(e) => updateImagem(imagem.id, 'categoria', e.target.value)}
+                          options={categorias}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-70 dark:text-gray-300 mb-1">
+                          {getCategoriaEmoji(imagem.categoria)} {imagem.file?.name || `Imagem ${index + 1}`}
+                        </label>
+                        <div className="text-xs text-gray-50 dark:text-gray-400">
+                          {imagem.file?.size ? `${(imagem.file.size / 1024 /1024).toFixed(2)}MB` : 'Arquivo carregado'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-70 dark:text-gray-300 mb-1">
+                        Descrição da Imagem *
+                      </label>
+                      <TextArea
+                        placeholder="Ex: Tela de cadastro simples e rápida do Baby Diary, mostrando o formulário intuitivo para mães..."
+                        value={imagem.descricao}
+                        onChange={(e) => updateImagem(imagem.id, 'descricao', e.target.value)}
+                        rows={3}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-gray-50 dark:text-gray-400 mt-1">
+                        Descreva o que a imagem mostra para que a IA use no contexto do roteiro
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Botão Remover */}
                   <button
-                    onClick={() => handleDelete(image.id)}
-                    className="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
+                    onClick={() => removeImagem(imagem.id)}
+                    className="p-2 text-red-50 hover:bg-red-50 dark:hover:bg-red-900 rounded-lg transition-colors"
                   >
-                    <Trash2 className="w-4 h-4 text-red-500" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-              
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
-                <p className="text-white text-xs truncate">{image.name}</p>
-                <p className="text-white/80 text-xs">{formatFileSize(image.size)}</p>
-              </div>
-              
-              <button
-                onClick={() => onImageSelect(image)}
-                className={`absolute top-2 right-2 px-2 py-1 rounded text-xs font-medium transition-all duration-200 ${
-                  selectedImageIds.includes(image.id)
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                {selectedImageIds.includes(image.id) ? 'Selecionada' : 'Selecionar'}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {previewImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
-          <div className="max-w-4xl max-h-4xl p-4">
-            <img
-              src={previewImage}
-              alt="Preview"
-              className="max-w-full max-h-full object-contain rounded-lg"
-            />
-            <button
-              onClick={() => setPreviewImage(null)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </Card>
   );
-};
+}; 

@@ -367,7 +367,7 @@ export function addBackgroundMusic(
   } = {}
 ): void {
   const {
-    volume = 0.15, // Volume reduzido para não sobrepor a narração
+    volume = 0.15, // Peso da música ainda menor para não embolar
     loop = true,
     fadeIn = 2,
     fadeOut = 2
@@ -385,27 +385,25 @@ export function addBackgroundMusic(
 
     // Obter duração do vídeo
     const videoDuration = getVideoDuration(inputVideo);
-    
-    // Construir filtro de áudio mais simples e robusto
+
+    // Construir filtro de áudio robusto
     let musicFilter = `volume=${volume}`;
-    
-    // Adicionar fade in/out se especificado
     if (fadeIn > 0) {
       musicFilter += `,afade=t=in:st=0:d=${fadeIn}`;
     }
     if (fadeOut > 0 && videoDuration > fadeOut) {
+      // Garantir fade out nos últimos segundos do vídeo
       musicFilter += `,afade=t=out:st=${videoDuration - fadeOut}:d=${fadeOut}`;
     }
-    
-    // Adicionar loop se necessário
     if (loop) {
       musicFilter += `,aloop=loop=-1:size=2e+09`;
     }
+
+    // Peso da música ainda menor (0.15) para não embolar a narração
+    const musicWeight = 0.15;
+    const command = `ffmpeg -y -i "${inputVideo}" -i "${musicPath}" -filter_complex "[1:a]${musicFilter}[bgmusic];[0:a][bgmusic]amix=inputs=2:duration=shortest:weights=1,${musicWeight}" -c:v copy -c:a aac -b:a 192k "${outputVideo}"`;
     
-    // Comando FFmpeg CORRIGIDO: usar duration=shortest para cortar na duração do vídeo
-    const command = `ffmpeg -y -i "${inputVideo}" -i "${musicPath}" -filter_complex "[1:a]${musicFilter}[bgmusic];[0:a][bgmusic]amix=inputs=2:duration=shortest:weights=1,0.3" -c:v copy -c:a aac -b:a 192k "${outputVideo}"`;
-    
-    log(`🎵 Adicionando música de fundo (volume: ${volume}): ${command}`);
+    log(`🎵 [MIXAGEM] Adicionando música de fundo (volume: ${volume}, peso: ${musicWeight}, fadeIn: ${fadeIn}, fadeOut: ${fadeOut}, duração vídeo: ${videoDuration}): ${command}`);
     execSync(command);
 
     // Verificar se o arquivo foi criado
@@ -416,16 +414,14 @@ export function addBackgroundMusic(
     log(`✅ Música de fundo adicionada com sucesso: ${outputVideo}`);
   } catch (error) {
     log(`❌ Erro ao adicionar música de fundo: ${error}`);
-    
     // Fallback mais robusto: tentar com comando mais simples
     try {
       log(`🔄 Tentando fallback com comando simples...`);
-      const fallbackCommand = `ffmpeg -y -i "${inputVideo}" -i "${musicPath}" -filter_complex "[1:a]volume=${volume}[bgmusic];[0:a][bgmusic]amix=inputs=2:duration=shortest" -c:v copy "${outputVideo}"`;
+      const fallbackCommand = `ffmpeg -y -i "${inputVideo}" -i "${musicPath}" -filter_complex "[1:a]volume=${volume}[bgmusic];[0:a][bgmusic]amix=inputs=2:duration=shortest:weights=1,0.15" -c:v copy "${outputVideo}"`;
       execSync(fallbackCommand);
       log(`✅ Fallback executado com sucesso`);
     } catch (fallbackError) {
       log(`❌ Fallback também falhou: ${fallbackError}`);
-      
       // Último fallback: copiar vídeo sem música
       try {
         log(`🔄 Último fallback: copiando vídeo sem música...`);

@@ -14,6 +14,29 @@ import { createKenBurnsAnimation, addAudioToVideo, concatenateVideos, addSubtitl
 import { generateProgressiveSubtitlesWithAudio } from '../subtitles/aligner';
 import { generateScript } from '../text/gemini-groq';
 import JSON5 from 'json5'; // Adicionar no topo do arquivo
+import axios from 'axios';
+
+// Função utilitária para gerar CTA visual personalizado
+function gerarCTAPersonalizado(tema: string, tipo: string, publico: string): string {
+  // Exemplos de CTA por tipo
+  if (tipo.toLowerCase().includes('anúncio') || tipo.toLowerCase().includes('publicidade')) {
+    return 'Clique no link e descubra mais!';
+  }
+  if (tipo.toLowerCase().includes('educativo')) {
+    return 'Compartilhe este vídeo com outras mães!';
+  }
+  if (tipo.toLowerCase().includes('story') || tipo.toLowerCase().includes('reels')) {
+    return 'Arraste para cima e saiba mais!';
+  }
+  if (tipo.toLowerCase().includes('tutorial')) {
+    return 'Experimente agora mesmo!';
+  }
+  if (tipo.toLowerCase().includes('inspiracional')) {
+    return 'Siga para mais dicas e inspiração!';
+  }
+  // CTA padrão
+  return `Não perca! Saiba tudo sobre ${tema}`;
+}
 
 // Função para upload para Cloudinary
 async function uploadToCloudinary(filePath: string, folder: string = 'babyvideoia'): Promise<string> {
@@ -114,6 +137,12 @@ export interface CenaPayload {
   imagens?: string[]; // URLs ou caminhos das imagens enviadas pelo usuário
 }
 
+export interface ImagemComDescricao {
+  url: string;
+  descricao: string;
+  categoria: 'funcionalidade' | 'painel_admin' | 'user_interface' | 'pagamento' | 'loja' | 'atividades' | 'diario' | 'outros';
+}
+
 export interface GenerateVideoPayload {
   tema: string;
   tipo: string;
@@ -126,6 +155,18 @@ export interface GenerateVideoPayload {
   titulo?: string; // Novo campo para título do vídeo
   gerarLegenda?: boolean; // Novo campo para gerar legenda de redes sociais
   plataformaLegenda?: 'instagram' | 'facebook' | 'tiktok' | 'youtube'; // Novo campo para escolher plataforma
+  musica?: string; // URL da música
+  imagensComDescricao?: ImagemComDescricao[]; // Novo campo para imagens com descrições
+  configuracoes?: {
+    duracao?: number;
+    qualidade?: string;
+    estilo?: string;
+    volumeMusica?: number;
+    fadeInMusica?: number;
+    fadeOutMusica?: number;
+    loopMusica?: boolean;
+  };
+  cta?: string; // Novo campo para CTA visual
 }
 
 export interface VideoResult {
@@ -182,42 +223,16 @@ function montarPromptIA(payload: GenerateVideoPayload): string {
   const cenasText = Array.isArray(payload.cenas) && payload.cenas.length > 0 
     ? payload.cenas.map((cena, idx) => `Cena ${idx + 1}: ${cena.descricao}`).join('\n')
     : `Gerar ${numeroCenas} cenas automaticamente`;
-  return `Você é um roteirista especialista em vídeos verticais para redes sociais sobre maternidade e bebês.
 
-Gere um roteiro VSL dividido em ${numeroCenas} cenas, cada uma baseada na descrição abaixo.
+  // Adicionar contexto das imagens enviadas pelo usuário
+  let contextoImagens = '';
+  if (payload.imagensComDescricao && payload.imagensComDescricao.length > 0) {
+    contextoImagens = `\n\nIMAGENS ENVIADAS PELO USUÁRIO (use estas descrições como contexto visual):\n${payload.imagensComDescricao.map((img, idx) => 
+      `Cena ${idx + 1}: ${img.descricao} (Categoria: ${img.categoria})`
+    ).join('\n')}\n\nIMPORTANTE: Se o usuário enviou imagens, use as descrições delas como base para o roteiro. Incorpore os elementos visuais descritos nas narrações e mantenha a coerência com o contexto das imagens.`;
+  }
 
-Para cada cena, gere:
-- a narração (SSML)
-- a descrição visual resumida
-- 3 descrições detalhadas e diferentes para imagens da cena (varie ângulo, foco, emoção, ação, iluminação, etc)
-
-ATENÇÃO: O campo "visual" deve ser um array com exatamente 3 strings, cada uma descrevendo uma imagem diferente da cena. NÃO retorne menos de 3 descrições. Se não conseguir, repita a última até completar 3.
-
-NÃO use blocos markdown (não coloque \`\`\`json ou \`\`\` no início/fim da resposta). Apenas retorne o JSON puro.
-
-Tema: ${tema}
-Tipo: ${tipo}
-Público: ${publico}
-Tom: ${tom}
-Duração total: ${duracao} segundos
-
-CENAS:
-${cenasText}
-
-Exemplo de resposta:
-{
-  "cenas": [
-    {
-      "narracao": "...",
-      "visual": [
-        "Prompt detalhado para imagem 1",
-        "Prompt detalhado para imagem 2",
-        "Prompt detalhado para imagem 3"
-      ]
-    }
-  ],
-  "caption": "Legenda para Instagram com hashtags e call-to-action"
-}`;
+  return `Você é um roteirista especialista em vídeos verticais para redes sociais sobre maternidade e bebês.\n\nGere um roteiro VSL dividido em ${numeroCenas} cenas, cada uma baseada na descrição abaixo.\n\nPara cada cena, gere:\n- a narração (SSML)\n- a descrição visual resumida\n- 3 descrições detalhadas e diferentes para imagens da cena (varie ângulo, foco, emoção, ação, iluminação, etc)\n\nATENÇÃO: O campo \"visual\" deve ser um array com exatamente 3 strings, cada uma descrevendo uma imagem diferente da cena. NÃO retorne menos de 3 descrições. Se não conseguir, repita a última até completar 3.\n\nNÃO use blocos markdown (não coloque \`\`\`json ou \`\`\` no início/fim da resposta). Apenas retorne o JSON puro.\n\nTema: ${tema}\nTipo: ${tipo}\nPúblico: ${publico}\nTom: ${tom}\nDuração total: ${duracao} segundos${contextoImagens}\n\nCENAS:\n${cenasText}\n\nExemplo de resposta:\n{\n  \"cenas\": [\n    {\n      \"narracao\": \"...\",\n      \"visual\": [\n        \"Prompt detalhado para imagem 1\",\n        \"Prompt detalhado para imagem 2\",\n        \"Prompt detalhado para imagem 3\"\n      ]\n    }\n  ],\n  \"caption\": \"Legenda para Instagram com hashtags e call-to-action\"\n}`;
 }
 
 // Tornar o parser de JSON robusto contra blocos markdown
@@ -723,44 +738,31 @@ export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<V
     const publicoInfo = publicoConfig[publico] || publicoConfig['Mães de primeira viagem'];
 
     // Prompt dinâmico para IA - versão VSL contínua e natural
-    const promptIA = `Gere um roteiro VSL contínuo, natural e conversacional para um vídeo sobre "${payload.tema}".
+    const promptIA = `Gere um roteiro VSL para vídeo sobre "${payload.tema}".
 
 REQUISITOS:
-- Roteiro fluido e contínuo, como um discurso único e natural
-- Texto adequado para ${payload.duracao || 30} segundos de vídeo
-- Adapte a linguagem para: ${publico}
-- Fale diretamente com o público, de forma humana
-- Estrutura: Hook → Problema → Solução → Benefícios → Call-to-action
-- Termine com call-to-action forte e claro
+- Crie um campo "roteiro" (ou "script_audio") com o texto completo, FLUIDO, HUMANO, direcionado diretamente ao público-alvo, SEM SSML, SEM blocos curtos, para ser usado na narração principal do vídeo (áudio ElevenLabs). O texto deve ser natural, envolvente, com tom adaptado ao público e ao tipo de vídeo.
+- No FINAL do campo "roteiro", inclua um call-to-action (CTA) natural e persuasivo, adaptando a mensagem ao público:
+  - Se o público for mães, gestantes, pais ou familiares: incentive a baixar o app Baby Diary.
+  - Se o público for afiliados, agências, influenciadoras, criadores de infoprodutos, empreendedores, consultores, revendedores, startups, profissionais liberais ou educadores: incentive a conhecer o Baby Diary White Label, criar seu próprio app, ou solicitar uma demonstração.
+  - O CTA deve ser integrado ao texto, nunca colado de forma artificial.
+- Crie um campo "cenas", que é um array de objetos, cada um com:
+  - "narracao": frase curta (pode usar SSML para emoção, pausa, ênfase) para servir de referência visual para a cena.
+  - "visual": array de 3 descrições detalhadas para imagens da cena (varie ângulo, foco, emoção, ação, iluminação, etc).
+- NÃO use blocos markdown (não coloque \`\`\`json ou \`\`\` no início/fim da resposta). Apenas retorne o JSON puro.
+- O campo "roteiro" será usado para gravar o áudio principal no ElevenLabs, então deve ser um texto contínuo, natural, sem SSML.
 
-DIVISÃO EM CENAS:
-- Divida o roteiro em ${typeof payload.cenas === 'number' ? payload.cenas : 5} partes de tamanho proporcional
-- A divisão é APENAS para sincronizar imagens, não para separar a narração
-- Cada parte deve ter 3 descrições visuais diferentes para ilustrar a cena
-
-FORMATO DO JSON:
+Exemplo de resposta:
 {
-  "roteiro": "Texto contínuo e fluido do roteiro completo, sem quebras artificiais",
+  "roteiro": "Texto fluido, humano, para o áudio principal... No final, CTA natural e adaptado ao público!",
   "cenas": [
     {
-      "trecho": "Parte do texto para esta cena (para sincronizar imagens)",
-      "visual": [
-        "Primeira descrição visual detalhada",
-        "Segunda descrição visual diferente", 
-        "Terceira descrição visual única"
-      ]
+      "narracao": "<speak>Frase curta para a cena</speak>",
+      "visual": ["Prompt 1", "Prompt 2", "Prompt 3"]
     }
   ]
-}
-
-EXEMPLO DE ROTEIRO CONTÍNUO:
-"Você já pensou em escalar seu negócio sem complicação? O white label é a solução que você estava esperando. Imagine ter seu próprio produto, com sua marca, sem precisar desenvolver do zero. Com o white label, você foca no que realmente importa: vender, crescer e impactar mais pessoas. Deixe a tecnologia e o suporte com a gente. Não perca tempo! Dê o próximo passo e transforme sua jornada empreendedora agora mesmo. Clique no link e comece hoje!"
-
-IMPORTANTE: 
-- Retorne APENAS o JSON, sem texto explicativo
-- O roteiro deve ser um texto contínuo, não blocos isolados
-- Cada cena deve ter EXATAMENTE 3 descrições visuais diferentes`;
-    log(`🧠 Prompt dinâmico para IA: ${promptIA}`);
+}`;
+    log(`🧠 Prompt dinâmico para IA (robusto): ${promptIA}`);
 
     // Criar diretórios necessários
     const imagesOutputDir = 'output/generated_images';
@@ -775,11 +777,10 @@ IMPORTANTE:
     // 1. Gerar roteiro via IA
     log('🤖 Gerando roteiro completo via IA...');
     const apiKey = await getCredential('GEMINI_KEY');
-    
     if (!apiKey) throw new Error('GEMINI_KEY não configurada no banco.');
-
     const numeroCenas = typeof payload.cenas === 'number' ? payload.cenas : 5;
     let roteiroIAString = await generateScript(promptIA, apiKey);
+    log('🟢 RESPOSTA BRUTA DA IA: ' + roteiroIAString);
     
     // Parse do JSON com correção automática mais robusta
     let roteiroIA: any;
@@ -797,170 +798,66 @@ IMPORTANTE:
           log('✅ JSON reconhecido como array direto, convertido para objeto com cenas.');
         }
       }
-      
       // NOVO: Se não tiver roteiro contínuo, criar a partir das cenas (fallback)
       if (!roteiroIA.roteiro && roteiroIA.cenas) {
         roteiroIA.roteiro = roteiroIA.cenas.map(cena => cena.trecho || cena.narracao || '').join(' ');
         log('✅ Roteiro contínuo criado a partir das cenas (fallback).');
       }
-      
       log(`✅ JSON parseado com sucesso na primeira tentativa`);
     } catch (e) {
       log(`⚠️ Erro no JSON original: ${e.message}`);
       log(`🔧 Tentando corrigir JSON...`);
       log(`📋 Resposta bruta da IA: ${roteiroIAString.substring(0, 200)}...`);
-      
-      let jsonString = roteiroIAString.trim();
-      
-      // Remover texto explicativo antes do JSON
-      const jsonStart = jsonString.search(/\{/);
-      if (jsonStart > 0) {
-        jsonString = jsonString.substring(jsonStart);
-        log(`🔧 Removido texto explicativo antes do JSON`);
-      }
-      
-      // Tentar extrair apenas o array de cenas se o JSON estiver malformado
-      const cenasMatch = jsonString.match(/"cenas"\s*:\s*\[([\s\S]*?)\]/);
-      if (cenasMatch) {
-        try {
-          const cenasContent = cenasMatch[1];
-          // Limpar o conteúdo das cenas
-          let cenasLimpo = cenasContent
-            .replace(/,\s*}/g, '}') // Remove vírgula antes de }
-            .replace(/,\s*]/g, ']') // Remove vírgula antes de ]
-            .replace(/\n/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          
-          // Tentar parsear apenas o array de cenas
-          const cenasArray = JSON.parse(`[${cenasLimpo}]`);
-          if (Array.isArray(cenasArray) && cenasArray.length > 0) {
-            roteiroIA = { cenas: cenasArray };
-            log(`✅ JSON corrigido extraindo apenas o array de cenas!`);
-          }
-        } catch (e2) {
-          log(`❌ Falha ao extrair array de cenas: ${e2.message}`);
-        }
-      }
-      
-      // Se ainda não conseguiu, tentar correção mais agressiva
-      if (!roteiroIA) {
-        try {
-          // Remover possíveis caracteres extras no final
-          jsonString = jsonString.replace(/[\,\s]*$/, '');
-          
-          // Contar chaves e colchetes
-          const openBraces = (jsonString.match(/\{/g) || []).length;
-          const closeBraces = (jsonString.match(/\}/g) || []).length;
-          const openBrackets = (jsonString.match(/\[/g) || []).length;
-          const closeBrackets = (jsonString.match(/\]/g) || []).length;
-          
-          log(`🔍 Contagem: {${openBraces}/${closeBraces}}, [${openBrackets}/${closeBrackets}]`);
-          
-          // Fechar colchetes abertos
-          for (let i = 0; i < (openBrackets - closeBrackets); i++) {
-            jsonString += ']';
-          }
-          
-          // Fechar chaves abertas
-          for (let i = 0; i < (openBraces - closeBraces); i++) {
-            jsonString += '}';
-          }
-          
-          // Tentar parse novamente
-          roteiroIA = JSON.parse(jsonString);
-          log(`✅ JSON corrigido com fechamento automático!`);
-        } catch (e2) {
-          log(`❌ Falha na correção do JSON: ${e2.message}`);
-          log(`📋 JSON problemático: ${jsonString.substring(0, 500)}...`);
-          
-          // Tentar extrair JSON usando regex mais robusto
-          const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            try {
-              roteiroIA = JSON.parse(jsonMatch[0]);
-              log(`✅ JSON extraído com regex!`);
-            } catch (e3) {
-              log(`❌ Regex também falhou: ${e3.message}`);
-            }
-          }
-        }
-      }
-      
-      // Se ainda falhou, tentar extrair cenas individualmente
-      if (!roteiroIA) {
-        log(`🔄 Tentando extrair cenas individualmente...`);
-        const cenasIndividuais = [];
-        const cenasRegex = /\{[^}]*"narracao"[^}]*"visual"[^}]*\}/g;
-        const matches = jsonString.match(cenasRegex);
-        
-        if (matches && matches.length > 0) {
-          for (const match of matches) {
-            try {
-              const cena = JSON.parse(match);
-              if (cena.narracao && cena.visual) {
-                cenasIndividuais.push(cena);
-              }
-            } catch (e) {
-              log(`⚠️ Falha ao parsear cena individual: ${e.message}`);
-            }
-          }
-          
-          if (cenasIndividuais.length > 0) {
-            roteiroIA = { cenas: cenasIndividuais };
-            log(`✅ Extraídas ${cenasIndividuais.length} cenas individualmente!`);
-          }
-        }
-      }
-      
-      // Se ainda falhou, criar roteiro de fallback baseado na resposta da IA
-      if (!roteiroIA) {
-        log(`🔄 Criando roteiro de fallback baseado na resposta da IA...`);
-        
-        // Tentar extrair pelo menos a narração da resposta da IA
-        const narracaoMatch = roteiroIAString.match(/"narracao"\s*:\s*"([^"]+)"/g);
-        const visualMatch = roteiroIAString.match(/"visual"\s*:\s*\[([^\]]+)\]/g);
-        
-        if (narracaoMatch && narracaoMatch.length > 0) {
-          const cenas = [];
-          for (let i = 0; i < Math.min(narracaoMatch.length, 5); i++) {
-            const narracao = narracaoMatch[i].match(/"narracao"\s*:\s*"([^"]+)"/)?.[1] || `Cena ${i + 1} sobre ${payload.tema}`;
-            const visual = visualMatch && visualMatch[i] ? 
-              visualMatch[i].match(/"visual"\s*:\s*\[([^\]]+)\]/)?.[1].split(',').map(v => v.trim().replace(/"/g, '')) || 
-              [`Imagem ${i + 1} relacionada ao tema`, `Variação da imagem ${i + 1}`, `Elemento visual ${i + 1}`] :
-              [`Imagem ${i + 1} relacionada ao tema`, `Variação da imagem ${i + 1}`, `Elemento visual ${i + 1}`];
-            
-            cenas.push({ narracao, visual });
-          }
-          
-          roteiroIA = { cenas };
-          log(`✅ Roteiro criado com ${cenas.length} cenas extraídas da resposta da IA`);
-        } else {
-          // Último recurso: roteiro genérico
-          roteiroIA = {
-            cenas: [
-              {
-                narracao: "Olá! Vamos falar sobre " + payload.tema + ".",
-                visual: ["Imagem relacionada ao tema", "Variação da imagem", "Outra variação"]
-              },
-              {
-                narracao: "Você já passou por situações como essa?",
-                visual: ["Pessoa pensativa", "Situação de reflexão", "Momento de decisão"]
-              },
-              {
-                narracao: "A solução está mais próxima do que você imagina.",
-                visual: ["Solução visual", "Resultado positivo", "Momento de realização"]
-              }
-            ]
-          };
-          log(`🔄 Usando roteiro de fallback genérico com ${roteiroIA.cenas.length} cenas`);
-        }
+      // NOVO: tentar corrigir JSON malformado
+      try {
+        const jsonCorrigido = corrigirJsonMalformado(roteiroIAString);
+        log('🛠️ JSON corrigido automaticamente:\n' + jsonCorrigido.substring(0, 400));
+        roteiroIA = JSON.parse(jsonCorrigido);
+        log('✅ JSON corrigido parseado com sucesso!');
+      } catch (e2) {
+        log(`❌ Falha ao corrigir JSON: ${e2.message}`);
+        // Fallback: tenta extrair cenas individualmente (como já faz)
+        // ...restante do código de fallback...
       }
     }
     
     if (!roteiroIA || !Array.isArray(roteiroIA.cenas)) {
       log(`❌ Roteiro inválido após todas as tentativas. RoteiroIA: ${JSON.stringify(roteiroIA)}`);
       throw new Error('Falha ao gerar roteiro: resposta inválida da IA.');
+    }
+
+    // Após o parse do roteiroIA, garantir que todas as cenas tenham 3 descrições visuais
+    let tentativasRoteiro = 0;
+    while (tentativasRoteiro < 3) {
+      let precisaReenviar = false;
+      for (let i = 0; i < roteiroIA.cenas.length; i++) {
+        let visual = roteiroIA.cenas[i].visual;
+        let visuais = Array.isArray(visual) ? visual : [visual];
+        if (visuais.length < 3) {
+          precisaReenviar = true;
+          break;
+        }
+      }
+      if (!precisaReenviar) break;
+      // Se precisar reenviar, pede novamente para a IA
+      tentativasRoteiro++;
+      log(`⚠️ Roteiro IA veio com menos de 3 descrições visuais em alguma cena. Tentando novamente (${tentativasRoteiro}/3)...`);
+      roteiroIAString = await generateScript(promptIA, apiKey);
+      try {
+        roteiroIA = JSON.parse(roteiroIAString);
+      } catch (e) {
+        log('❌ Erro ao parsear novo roteiro IA, usando fallback.');
+        roteiroIA = { cenas: [] };
+      }
+    }
+    // Se mesmo assim não vier, completa localmente
+    for (let i = 0; i < roteiroIA.cenas.length; i++) {
+      let visual = roteiroIA.cenas[i].visual;
+      let visuais = Array.isArray(visual) ? visual : [visual];
+      while (visuais.length < 3) {
+        visuais.push(visuais[visuais.length - 1] || `Imagem extra da cena ${i + 1}`);
+      }
+      roteiroIA.cenas[i].visual = visuais;
     }
 
     // --- INÍCIO DO FLUXO DE FALLBACK INTELIGENTE PARA DESCRIÇÕES VISUAIS ---
@@ -1036,30 +933,86 @@ IMPORTANTE:
       }
     }
 
-    // 4. Gerar imagens sequencialmente para todas as cenas
-    log('🎨 Iniciando geração sequencial de imagens...');
+    // 4. Gerar imagens para todas as cenas (corrigido)
+    log('🎨 Iniciando geração de imagens...');
     const imagensPorCena: string[][] = [];
-    
-    for (let i = 0; i < roteiroIA.cenas.length; i++) {
-      const cena = roteiroIA.cenas[i];
-      log(`🎬 Processando cena ${i + 1}/${roteiroIA.cenas.length}...`);
-      
-      // Converter formato antigo para novo se necessário
-      const cenaFormatada = {
-        trecho: cena.trecho || cena.narracao || `Cena ${i + 1}`,
-        visual: cena.visual
-      };
-      
-      const imagensCena = await processarImagensCenaSequencial(cenaFormatada, payload, i + 1, arquivosTemporarios);
-      imagensPorCena.push(imagensCena);
-      
-      // Delay entre cenas para não sobrecarregar
-      if (i < roteiroIA.cenas.length - 1) {
-        log(`⏳ Aguardando 3 segundos antes da próxima cena...`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+    const imagensComDescricao = Array.isArray(payload.imagensComDescricao) ? payload.imagensComDescricao : [];
+    const useSD = payload.useStableDiffusion || process.env.USE_STABLE_DIFFUSION === 'true' || process.env.COLAB_URL;
+    if (!useSD) {
+      // Freepik: gerar imagens de forma sequencial para evitar sobrecarga
+      for (let i = 0; i < roteiroIA.cenas.length; i++) {
+        let imagensCena: string[] = [];
+        const cena = roteiroIA.cenas[i];
+        const visuais = Array.isArray(cena.visual) ? cena.visual : [cena.visual];
+        // 1ª imagem: gerada pela IA
+        const img1 = await gerarImagemComFallbackMelhorado(visuais[0], payload, i + 1, 1);
+        imagensCena.push(img1);
+        // 2ª imagem: enviada pelo usuário (se houver)
+        if (imagensComDescricao.length > 0) {
+          const idxUserImg = i % imagensComDescricao.length;
+          let imgUrl = imagensComDescricao[idxUserImg].url;
+          if (imgUrl.startsWith('http')) {
+            const ext = path.extname(imgUrl).split('?')[0] || '.png';
+            const localPath = `output/generated_images/user_img_${i + 1}${ext}`;
+            await baixarImagemParaLocal(imgUrl, localPath);
+            imagensCena.push(localPath);
+          } else {
+            imagensCena.push(imgUrl);
+          }
+        } else {
+          const img2 = await gerarImagemComFallbackMelhorado(visuais[1], payload, i + 1, 2);
+          imagensCena.push(img2);
+        }
+        // 3ª imagem: gerada pela IA
+        const img3 = await gerarImagemComFallbackMelhorado(visuais[2], payload, i + 1, 3);
+        imagensCena.push(img3);
+
+        imagensPorCena.push(imagensCena);
+
+        // Pequeno delay para não sobrecarregar a Freepik
+        if (i < roteiroIA.cenas.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1200)); // 1,2 segundos
+        }
       }
+      log('✅ Todas as imagens Freepik foram geradas de forma sequencial!');
+    } else {
+      // Stable Diffusion: manter sequencial e delays
+      for (let i = 0; i < roteiroIA.cenas.length; i++) {
+        const cena = roteiroIA.cenas[i];
+        log(`🎬 Processando cena ${i + 1}/${roteiroIA.cenas.length}...`);
+        let imagensCena: string[] = [];
+        const visuais = Array.isArray(cena.visual) ? cena.visual : [cena.visual];
+        // 1ª imagem: gerada pela IA
+        const img1 = await gerarImagemComFallbackMelhorado(visuais[0], payload, i + 1, 1);
+        imagensCena.push(img1);
+        // 2ª imagem: enviada pelo usuário (se houver)
+        if (imagensComDescricao.length > 0) {
+          const idxUserImg = i % imagensComDescricao.length;
+          let imgUrl = imagensComDescricao[idxUserImg].url;
+          if (imgUrl.startsWith('http')) {
+            const ext = path.extname(imgUrl).split('?')[0] || '.png';
+            const localPath = `output/generated_images/user_img_${i + 1}${ext}`;
+            await baixarImagemParaLocal(imgUrl, localPath);
+            imagensCena.push(localPath);
+          } else {
+            imagensCena.push(imgUrl);
+          }
+        } else {
+          // Se não houver imagem do usuário, gerar pela IA
+          const img2 = await gerarImagemComFallbackMelhorado(visuais[1], payload, i + 1, 2);
+          imagensCena.push(img2);
+        }
+        // 3ª imagem: gerada pela IA
+        const img3 = await gerarImagemComFallbackMelhorado(visuais[2], payload, i + 1, 3);
+        imagensCena.push(img3);
+        imagensPorCena.push(imagensCena);
+        if (i < roteiroIA.cenas.length - 1) {
+          log(`⏳ Aguardando 3 segundos antes da próxima cena...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+      log('✅ Todas as imagens SD foram geradas de forma sequencial!');
     }
-    log('✅ Todas as imagens foram geradas com sucesso!');
 
     // 5. Gerar narração ElevenLabs
     log('🎤 Gerando narração ElevenLabs...');
@@ -1131,8 +1084,26 @@ IMPORTANTE:
     
     for (const sync of sincronizacao) {
       for (let i = 0; i < sync.imagens.length; i++) {
-        const img = sync.imagens[i];
-        
+        let img = sync.imagens[i];
+
+        // NOVO: Se for URL remota, baixar para local
+        if (typeof img === 'string' && (img.startsWith('http://') || img.startsWith('https://'))) {
+          const ext = path.extname(img).split('?')[0] || '.png';
+          const localPath = path.join(imagesOutputDir, `remote_img_${partIndex}${ext}`);
+          try {
+            await baixarImagemParaLocal(img, localPath);
+            arquivosTemporarios.push(localPath);
+            img = localPath;
+            log(`🌐 Imagem remota baixada para uso local: ${img}`);
+          } catch (e) {
+            log(`❌ Falha ao baixar imagem remota (${img}): ${e}`);
+            // Se falhar, cria um placeholder para não quebrar o pipeline
+            criarPlaceholderValido(localPath);
+            arquivosTemporarios.push(localPath);
+            img = localPath;
+          }
+        }
+
         // Verificar se a imagem existe
         if (!fs.existsSync(img)) {
           log(`⚠️ Imagem não encontrada: ${img}, criando placeholder...`);
@@ -1221,6 +1192,79 @@ IMPORTANTE:
       throw new Error(`Falha ao adicionar áudio ao vídeo: ${e}`);
     }
 
+    // Adicionar música de fundo (se especificada)
+    let videoComMusica = videoFinal;
+    if (payload.musica) {
+      log('🎵 Adicionando música de fundo...');
+      const { addBackgroundMusic } = require('../video/ffmpeg');
+      
+      try {
+        const videoComMusicaPath = path.join(outputDir, `video_com_musica_${Date.now()}.mp4`);
+        
+        // Converter URL da música para caminho do arquivo
+        let musicPath = payload.musica;
+        if (musicPath.startsWith('/api/music/file/')) {      // Converter URL da API para caminho do arquivo
+          const urlParts = musicPath.replace('/api/music/file/', '').split('/');
+          if (urlParts.length === 2) {
+            const category = urlParts[0];
+            const filename = decodeURIComponent(urlParts[1]);
+            musicPath = path.join(__dirname, '..', '..', 'assets', 'music', category, filename);
+            log(`🎵 Convertendo URL para caminho: ${musicPath}`);
+          }
+        }
+        
+        // Verificar se o arquivo de música existe
+        if (!fs.existsSync(musicPath)) {
+          log(`⚠️ Arquivo de música não encontrado: ${musicPath}`);
+          log(`🔄 Tentando buscar na pasta assets/music...`);
+          
+          // Tentar encontrar na pasta assets/music
+          const musicDir = path.join(__dirname, '..', '..', 'assets', 'music');
+          const musicFiles = fs.readdirSync(musicDir, { recursive: true })
+            .filter((file: string) => file.endsWith('.mp3') || file.endsWith('.wav'))
+            .map((file: string) => path.join(musicDir, file));
+          
+          if (musicFiles.length > 0) {
+            const randomMusic = musicFiles[Math.floor(Math.random() * musicFiles.length)];
+            log(`🎵 Usando música aleatória: ${randomMusic}`);
+            musicPath = randomMusic;
+          } else {
+            log(`⚠️ Nenhuma música encontrada na biblioteca, mantendo vídeo sem música`);
+            // Continuar sem música
+          }
+        }
+        
+        // Se temos um caminho válido de música, adicionar ao vídeo
+        if (musicPath && fs.existsSync(musicPath)) {
+          // Usar configurações do frontend ou valores padrão
+          const musicConfig = {
+            volume: payload.configuracoes?.volumeMusica || 0.2,
+            loop: payload.configuracoes?.loopMusica !== false,
+            fadeIn: payload.configuracoes?.fadeInMusica || 2,
+            fadeOut: payload.configuracoes?.fadeOutMusica || 2
+          };
+          
+          log(`🎵 Configurações de música: volume=${musicConfig.volume}, loop=${musicConfig.loop}, fadeIn=${musicConfig.fadeIn}, fadeOut=${musicConfig.fadeOut}`);
+          
+          addBackgroundMusic(
+            videoFinal,
+            musicPath,
+            videoComMusicaPath,
+            musicConfig
+          );
+          
+          videoComMusica = videoComMusicaPath;
+          arquivosTemporarios.push(videoComMusicaPath);
+          log(`✅ Música de fundo adicionada: ${videoComMusicaPath}`);
+        } else {
+          log(`⚠️ Música não encontrada, mantendo vídeo sem música de fundo`);
+        }
+      } catch (e) {
+        log(`❌ Erro ao adicionar música de fundo: ${e}`);
+        log(`⚠️ Mantendo vídeo sem música de fundo`);
+      }
+    }
+
     // 8. Gerar legendas
     log('📝 Gerando legendas...');
     // Limpar texto de SSML para legendas
@@ -1237,14 +1281,41 @@ IMPORTANTE:
 
     // 9. Adicionar legendas ao vídeo
     const videoFinalLegendado = path.join(outputDir, `video_final_legendado_${Date.now()}.mp4`);
-    await addSubtitlesToVideo(videoFinal, subtitlesPath, videoFinalLegendado);
+    await addSubtitlesToVideo(videoComMusica, subtitlesPath, videoFinalLegendado);
     arquivosTemporarios.push(videoFinal);
 
     log(`✅ Vídeo final legendado salvo em: ${videoFinalLegendado}`);
 
+    // 9.5 Adicionar CTA visual ao vídeo
+    log('📢 Adicionando Call-to-Action visual...');
+    const { applyVideoStyle } = require('../video/ffmpeg');
+    const videoComCTA = path.join(outputDir, `video_com_cta_${Date.now()}.mp4`);
+    
+    try {
+      // Usar o CTA enviado pelo frontend (payload.cta), se existir
+      const ctaText = payload.cta || '';
+      if (ctaText && ctaText.trim().length > 0) {
+        await applyVideoStyle(videoFinalLegendado, videoComCTA, {
+          callToActionText: ctaText,
+          resolution: payload.formato || 'portrait'
+        });
+        arquivosTemporarios.push(videoComCTA);
+        log(`✅ CTA visual adicionado: ${ctaText}`);
+      } else {
+        // Se não houver CTA, apenas copia o vídeo legendado
+        fs.copyFileSync(videoFinalLegendado, videoComCTA);
+        log('ℹ️ Nenhum CTA visual adicionado (campo vazio).');
+      }
+    } catch (e) {
+      log(`❌ Erro ao adicionar CTA visual: ${e}`);
+      log(`⚠️ Mantendo vídeo sem CTA visual`);
+      // Usar vídeo sem CTA se falhar
+      fs.copyFileSync(videoFinalLegendado, videoComCTA);
+    }
+
     // 10. Gerar thumbnail
     log('🖼️ Gerando thumbnail...');
-    const thumbnailPath = await generateThumbnail(videoFinalLegendado);
+    const thumbnailPath = await generateThumbnail(videoComCTA);
 
     // 11. Upload para Cloudinary
     log('☁️ Fazendo upload para Cloudinary...');
@@ -1334,4 +1405,50 @@ interface CenaComImagens {
   narracao: string;
   visual: string;
   imagens: string[];
+}
+
+// Função utilitária para baixar imagem de URL para arquivo local
+async function baixarImagemParaLocal(url: string, outputPath: string): Promise<string> {
+  const writer = fs.createWriteStream(outputPath);
+  const response = await axios.get(url, { responseType: 'stream' });
+  response.data.pipe(writer);
+  return new Promise((resolve, reject) => {
+    writer.on('finish', () => resolve(outputPath));
+    writer.on('error', reject);
+  });
+}
+
+// Função utilitária para CTA do Baby Diary
+function gerarCTABabyDiary(publico: string): string {
+  if (publico.toLowerCase().includes('mãe') || publico.toLowerCase().includes('gestante')) {
+    return '\n\nBaixe agora o app Baby Diary e registre cada momento especial do seu bebê! Praticidade, segurança e memórias para toda a família.';
+  }
+  if (publico.toLowerCase().includes('afiliado') || publico.toLowerCase().includes('empreendedor') || publico.toLowerCase().includes('agência') || publico.toLowerCase().includes('consultor') || publico.toLowerCase().includes('revendedor') || publico.toLowerCase().includes('startup')) {
+    return '\n\nDescubra como lucrar com o Baby Diary White Label! Tenha seu próprio app, comissionamento recorrente e tecnologia pronta para escalar.';
+  }
+  return '\n\nConheça o Baby Diary: o app que transforma memórias em histórias inesquecíveis. Baixe agora!';
+}
+
+// Função utilitária para corrigir JSON malformado vindo da IA
+function corrigirJsonMalformado(jsonString: string): string {
+  // Remove espaços e quebras de linha no início/fim
+  jsonString = jsonString.trim();
+
+  // Remove qualquer texto antes do primeiro {
+  const firstBrace = jsonString.indexOf('{');
+  if (firstBrace > 0) jsonString = jsonString.slice(firstBrace);
+
+  // Remove qualquer texto depois do último }
+  const lastBrace = jsonString.lastIndexOf('}');
+  if (lastBrace > 0) jsonString = jsonString.slice(0, lastBrace + 1);
+
+  // Se termina com "..." e não fecha com }, adiciona }
+  if (!jsonString.trim().endsWith('}')) {
+    jsonString = jsonString.trim() + '}';
+  }
+
+  // Remove vírgula extra antes de fechar
+  jsonString = jsonString.replace(/,\s*([}\]])/g, '$1');
+
+  return jsonString;
 }
