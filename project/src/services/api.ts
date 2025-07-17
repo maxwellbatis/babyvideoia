@@ -78,6 +78,7 @@ export interface Video {
   created_at: string;
   status: 'processing' | 'completed' | 'failed';
   legendaRedesSociais?: string; // Novo campo
+  cta?: string; // Campo para o CTA do vídeo
   configuracoes: GenerateVideoRequest;
 }
 

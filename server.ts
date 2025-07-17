@@ -113,6 +113,7 @@ app.get('/api/videos', (req, res) => {
       created_at: video.createdAt,
       status: 'completed',
       legendaRedesSociais: video.caption, // Novo campo
+      cta: video.cta, // Campo para o CTA do vídeo
       configuracoes: {
         tema: video.tema,
         tipo: video.tipo,

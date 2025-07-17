@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Download, Trash2, Eye, Hash, Calendar, Clock, Film } from 'lucide-react';
+import { Play, Download, Trash2, Eye, Hash, Calendar, Clock, Film, Copy, Target } from 'lucide-react';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { getVideos, deleteVideo, Video } from '../services/api';
@@ -82,6 +82,28 @@ export const VideoGallery: React.FC = () => {
     });
   };
 
+  // Função para calcular estatísticas de CTA
+  const getCTAStats = () => {
+    const ctaCounts: Record<string, number> = {};
+    const videosWithCTA = videos.filter(v => v.cta);
+    
+    videosWithCTA.forEach(video => {
+      const cta = video.cta || '';
+      ctaCounts[cta] = (ctaCounts[cta] || 0) + 1;
+    });
+    
+    return {
+      totalVideos: videos.length,
+      videosWithCTA: videosWithCTA.length,
+      topCTAs: Object.entries(ctaCounts)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3)
+        .map(([cta, count]) => ({ cta, count }))
+    };
+  };
+
+  const ctaStats = getCTAStats();
+
   if (loading) {
     return (
       <Card>
@@ -115,6 +137,71 @@ export const VideoGallery: React.FC = () => {
           {videos.length}
         </span>
       </div>
+
+      {/* Estatísticas de CTA */}
+      {videos.length > 0 && (
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 p-4 rounded-lg border border-green-200 dark:border-green-700">
+            <div className="flex items-center space-x-2">
+              <Target className="w-5 h-5 text-green-600" />
+              <span className="font-semibold text-green-800 dark:text-green-200">Vídeos com CTA</span>
+            </div>
+            <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+              {ctaStats.videosWithCTA}
+            </p>
+            <p className="text-sm text-green-600 dark:text-green-400">
+              de {ctaStats.totalVideos} vídeos
+            </p>
+          </div>
+          
+          {ctaStats.topCTAs.length > 0 && (
+            <>
+              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-700">
+                <div className="flex items-center space-x-2">
+                  <span className="text-lg">🥇</span>
+                  <span className="font-semibold text-blue-800 dark:text-blue-200">CTA Mais Usado</span>
+                </div>
+                <p className="text-sm text-blue-700 dark:text-blue-300 font-medium truncate">
+                  "{ctaStats.topCTAs[0].cta}"
+                </p>
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  {ctaStats.topCTAs[0].count} vezes
+                </p>
+              </div>
+              
+              {ctaStats.topCTAs[1] && (
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-700">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">🥈</span>
+                    <span className="font-semibold text-purple-800 dark:text-purple-200">2º Mais Usado</span>
+                  </div>
+                  <p className="text-sm text-purple-700 dark:text-purple-300 font-medium truncate">
+                    "{ctaStats.topCTAs[1].cta}"
+                  </p>
+                  <p className="text-xs text-purple-600 dark:text-purple-400">
+                    {ctaStats.topCTAs[1].count} vezes
+                  </p>
+                </div>
+              )}
+              
+              {ctaStats.topCTAs[2] && (
+                <div className="bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 p-4 rounded-lg border border-orange-200 dark:border-orange-700">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">🥉</span>
+                    <span className="font-semibold text-orange-800 dark:text-orange-200">3º Mais Usado</span>
+                  </div>
+                  <p className="text-sm text-orange-700 dark:text-orange-300 font-medium truncate">
+                    "{ctaStats.topCTAs[2].cta}"
+                  </p>
+                  <p className="text-xs text-orange-600 dark:text-orange-400">
+                    {ctaStats.topCTAs[2].count} vezes
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {videos.length === 0 ? (
         <div className="text-center py-12">
@@ -179,6 +266,30 @@ export const VideoGallery: React.FC = () => {
                     >
                       Copiar legenda
                     </button>
+                  </div>
+                )}
+
+                {/* CTA do Vídeo */}
+                {video.cta && (
+                  <div className="mb-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-700">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2">
+                        <Target className="w-4 h-4 text-green-600" />
+                        <span className="text-sm font-medium text-green-800 dark:text-green-200">🎯 Call-to-Action</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(video.cta || '');
+                          showToast('CTA copiado para a área de transferência!', 'success');
+                        }}
+                        className="p-1 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200 transition-colors"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <p className="text-sm text-green-700 dark:text-green-300 font-medium">
+                      "{video.cta}"
+                    </p>
                   </div>
                 )}
                 
@@ -280,6 +391,29 @@ export const VideoGallery: React.FC = () => {
                     {selectedVideo.titulo}
                   </p>
                 </div>
+                
+                {selectedVideo.cta && (
+                  <div>
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      🎯 Call-to-Action do Vídeo
+                    </h4>
+                    <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-700">
+                      <p className="text-gray-700 dark:text-gray-300 mb-3 font-medium text-lg">
+                        "{selectedVideo.cta}"
+                      </p>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedVideo.cta || '');
+                          showToast('CTA copiado para a área de transferência!', 'success');
+                        }}
+                        className="text-sm text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-200 underline flex items-center space-x-1"
+                      >
+                        <Copy className="w-4 h-4" />
+                        <span>📋 Copiar CTA</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
                 
                 {selectedVideo.legendaRedesSociais && (
                   <div>

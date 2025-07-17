@@ -481,7 +481,7 @@ export async function generateSocialMediaCaptionPersonalizada({
   plataforma: string;
   apiKey?: string;
 }): Promise<string> {
-  const prompt = `Crie uma legenda envolvente para ${plataforma} sobre "${tema}", para o público: ${publico}, no formato: ${tipo}. Use linguagem jovem, inclua hashtags relevantes e termine com o CTA: "${cta}". A legenda deve ser otimizada para ${plataforma}, pronta para copiar e colar.`;
+  const prompt = `Crie uma legenda envolvente para ${plataforma} sobre "${tema}", para o público: ${publico}, no formato: ${tipo}.\n\nREQUISITOS:\n- Escreva em português do Brasil\n- Use linguagem jovem, moderna e natural\n- Inclua emojis relevantes ao tema\n- Inclua hashtags estratégicas e populares do nicho materno\n- Otimize para engajamento em posts e reels\n- Finalize com o CTA: "${cta}"\n- A legenda deve ser pronta para copiar e colar, curta, criativa e humana.`;
   if (apiKey) {
     return generateWithFallback(prompt, 'Você é um especialista em marketing digital para mães, bebês e negócios. Crie legendas otimizadas para redes sociais, sempre adaptando ao público, tipo de vídeo e CTA.', async (name: string) => {
       if (name === 'GEMINI_KEY') return apiKey;

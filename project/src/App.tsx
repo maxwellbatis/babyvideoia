@@ -1,17 +1,53 @@
 import React, { useState } from 'react';
-import { Moon, Sun, Video, Sparkles, Settings, Zap } from 'lucide-react';
+import { Moon, Sun, Video, Sparkles, Settings, Zap, Target, Copy } from 'lucide-react';
 import { VideoForm } from './components/VideoForm';
 import { VideoGallery } from './components/VideoGallery';
 import { ChatIA } from './components/ChatIA';
 import { ApiStatus } from './components/ApiStatus';
 import { ApiSettings } from './components/ApiSettings';
 import { Toast, useToast } from './components/Toast';
+import { getVideos } from './services/api';
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [refreshGallery, setRefreshGallery] = useState(0);
   const [showApiSettings, setShowApiSettings] = useState(false);
+  const [ctaStats, setCtaStats] = useState<{
+    totalVideos: number;
+    videosWithCTA: number;
+    topCTAs: Array<{ cta: string; count: number }>;
+  }>({ totalVideos: 0, videosWithCTA: 0, topCTAs: [] });
   const { toast, showToast, hideToast } = useToast();
+
+  // Função para carregar estatísticas de CTA
+  const loadCTAStats = async () => {
+    try {
+      const videos = await getVideos();
+      const ctaCounts: Record<string, number> = {};
+      const videosWithCTA = videos.filter(v => v.cta);
+      
+      videosWithCTA.forEach(video => {
+        const cta = video.cta || '';
+        ctaCounts[cta] = (ctaCounts[cta] || 0) + 1;
+      });
+      
+      setCtaStats({
+        totalVideos: videos.length,
+        videosWithCTA: videosWithCTA.length,
+        topCTAs: Object.entries(ctaCounts)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 3)
+          .map(([cta, count]) => ({ cta, count }))
+      });
+    } catch (error) {
+      console.error('Erro ao carregar estatísticas de CTA:', error);
+    }
+  };
+
+  // Carregar estatísticas quando a galeria for atualizada
+  React.useEffect(() => {
+    loadCTAStats();
+  }, [refreshGallery]);
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
@@ -161,8 +197,54 @@ export default function App() {
             {/* API Status */}
             <ApiStatus />
 
+            {/* Resumo de CTAs Populares */}
+            {ctaStats.topCTAs.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4">
+                <div className="flex items-center space-x-2 mb-3">
+                  <div className="p-2 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl">
+                    <Target className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                      🎯 CTAs Populares
+                    </h3>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      {ctaStats.videosWithCTA} de {ctaStats.totalVideos} vídeos
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  {ctaStats.topCTAs.map((item, index) => (
+                    <div
+                      key={index}
+                      className="p-2 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                          {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'} {item.count}x
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(item.cta);
+                            showToast('CTA copiado!', 'success');
+                          }}
+                          className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                        "{item.cta}"
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Chat IA */}
-            <ChatIA onSuggestionClick={handleSuggestionClick} />
+            <ChatIA />
           </div>
         </div>
       </main>

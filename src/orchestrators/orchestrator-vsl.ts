@@ -614,6 +614,39 @@ function limparArquivosTemporarios(arquivos: string[]) {
   log(`✅ Limpeza concluída. ${arquivosParaLimpar.length} arquivos processados.`);
 }
 
+// Função utilitária para sugerir CTA conforme o público
+function sugerirCTAAutomatico(publico: string): string {
+  const publicoLower = publico.toLowerCase();
+  if (
+    publicoLower.includes('mãe') ||
+    publicoLower.includes('mae') ||
+    publicoLower.includes('gestante') ||
+    publicoLower.includes('pai') ||
+    publicoLower.includes('familia') ||
+    publicoLower.includes('família')
+  ) {
+    return 'Baixe agora o app Baby Diary e registre cada momento especial do seu bebê!';
+  }
+  if (
+    publicoLower.includes('afiliado') ||
+    publicoLower.includes('empreendedor') ||
+    publicoLower.includes('agência') ||
+    publicoLower.includes('agencia') ||
+    publicoLower.includes('consultor') ||
+    publicoLower.includes('revendedor') ||
+    publicoLower.includes('startup') ||
+    publicoLower.includes('influenciador') ||
+    publicoLower.includes('influenciadora') ||
+    publicoLower.includes('parceiro') ||
+    publicoLower.includes('criador') ||
+    publicoLower.includes('infoproduto') ||
+    publicoLower.includes('educador')
+  ) {
+    return 'Descubra como lucrar com o Baby Diary White Label! Solicite uma demonstração exclusiva.';
+  }
+  return 'Conheça o Baby Diary: o app que transforma memórias em histórias inesquecíveis. Baixe agora!';
+}
+
 // Função principal do pipeline VSL otimizada
 export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<VideoResult> {
   const arquivosTemporarios: string[] = [];
@@ -736,6 +769,9 @@ export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<V
       }
     };
     const publicoInfo = publicoConfig[publico] || publicoConfig['Mães de primeira viagem'];
+
+    // Sugerir CTA automaticamente se não vier do frontend
+    let ctaFinal = payload.cta && payload.cta.trim() !== '' ? payload.cta : sugerirCTAAutomatico(publico);
 
     // Prompt dinâmico para IA - versão VSL contínua e natural
     const promptIA = `Gere um roteiro VSL para vídeo sobre "${payload.tema}".
@@ -923,9 +959,9 @@ Exemplo de resposta:
         const { generateSocialMediaCaptionPersonalizada } = require('../text/gemini-groq');
         legendaRedesSociais = await generateSocialMediaCaptionPersonalizada({
           tema: payload.tema,
-          tipo: payload.tipo,
-          publico: payload.publico,
-          cta: payload.cta || '',
+          tipo: tipo,
+          publico: publico,
+          cta: ctaFinal,
           plataforma: payload.plataformaLegenda || 'instagram',
           apiKey
         });
@@ -1340,7 +1376,8 @@ Exemplo de resposta:
       cloudinaryThumbnailUrl: cloudinaryThumbnailUrl,
       duracao: duracaoAudio,
       tamanho: fs.existsSync(videoFinalLegendado) ? fs.statSync(videoFinalLegendado).size : 0,
-      caption: legendaRedesSociais || `Vídeo gerado automaticamente sobre ${payload.tema}`
+      caption: legendaRedesSociais || `Vídeo gerado automaticamente sobre ${payload.tema}`,
+      cta: ctaFinal,
     });
 
     log(`✅ Vídeo salvo com ID: ${videoId}`);
