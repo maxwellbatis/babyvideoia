@@ -13,7 +13,7 @@ const upload = multer({ dest: 'uploads/' });
 
 // Configurar CORS para aceitar requisições do frontend videos.babydiary.shop
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: 'https://videos.babydiary.shop',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
@@ -104,7 +104,7 @@ app.get('/api/videos', (req, res) => {
     const videos = videoMetadataManager.getAllVideos();
     
     // Formatar para o frontend
-    const formattedVideos = videos.map(video => ({
+    const formattedVideos = videos.map((video: any) => ({
       id: video.id,
       titulo: video.titulo,
       thumbnail: video.cloudinaryThumbnailUrl || video.thumbnailPath,
