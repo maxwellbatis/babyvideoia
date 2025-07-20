@@ -14,15 +14,26 @@ export async function gerarNarracaoElevenLabs(
 ) {
   let apiKey = apiKeyParam || process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
-    apiKey = await getCredential('ELEVENLABS_API_KEY');
+    // Forçar busca no banco, ignorando cache
+    apiKey = await getCredential('ELEVENLABS_API_KEY', true);
+    console.log('🔑 Buscando chave ElevenLabs no banco (forçado)...');
   }
   if (!apiKey) throw new Error('Chave ElevenLabs não configurada');
+  
+  // Limpar a chave API - remover espaços, quebras de linha e caracteres inválidos
+  apiKey = apiKey.trim().replace(/\s+/g, '').replace(/[\r\n]/g, '');
+  
+  console.log('🔑 Chave ElevenLabs encontrada:', apiKey.substring(0, 10) + '...');
+  
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
   const pasta = path.dirname(nomeArquivo);
   if (!fs.existsSync(pasta)) fs.mkdirSync(pasta, { recursive: true });
 
   // Melhorar o texto com tags de emoção e pausas naturais
   const textoMelhorado = melhorarTextoParaNarracao(texto);
+
+  console.log('🎙️ Enviando requisição para ElevenLabs...');
+  console.log('📝 Texto a ser narrado:', textoMelhorado.substring(0, 100) + '...');
 
   const response = await axios.post(
     url,
@@ -44,7 +55,10 @@ export async function gerarNarracaoElevenLabs(
       responseType: "arraybuffer"
     }
   );
+  
+  console.log('✅ Resposta recebida do ElevenLabs, salvando arquivo...');
   fs.writeFileSync(nomeArquivo, response.data);
+  console.log('💾 Arquivo de narração salvo:', nomeArquivo);
   return nomeArquivo;
 }
 
@@ -247,9 +261,14 @@ export async function gerarNarracaoComFallback(texto: string, nomeArquivo: strin
 export async function getElevenLabsUsage(apiKeyParam?: string): Promise<{ used: number; limit: number; plan: string }> {
   let apiKey = apiKeyParam || process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
-    apiKey = await getCredential('ELEVENLABS_API_KEY');
+    // Forçar busca no banco, ignorando cache
+    apiKey = await getCredential('ELEVENLABS_API_KEY', true);
   }
   if (!apiKey) throw new Error('Chave ElevenLabs não configurada');
+  
+  // Limpar a chave API - remover espaços, quebras de linha e caracteres inválidos
+  apiKey = apiKey.trim().replace(/\s+/g, '').replace(/[\r\n]/g, '');
+  
   const url = 'https://api.elevenlabs.io/v1/user/subscription';
   const response = await axios.get(url, {
     headers: {

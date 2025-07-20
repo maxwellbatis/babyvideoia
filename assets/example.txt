@@ -1,0 +1,23 @@
+🎵 MÚSICAS DE FUNDO
+
+Para adicionar músicas de fundo aos seus vídeos:
+
+1. Coloque arquivos de áudio (.mp3, .wav, .ogg, .m4a) nesta pasta
+2. Use apenas músicas livres de direitos autorais
+3. Formatos recomendados: MP3 (128kbps+) ou WAV
+4. Tamanho máximo: 50MB por arquivo
+
+📁 Estrutura sugerida:
+- ambient/     # Músicas suaves e ambientais
+- energetic/   # Músicas motivacionais
+- emotional/   # Músicas emocionais
+- corporate/   # Músicas profissionais
+
+🔗 Fontes de música livre:
+- YouTube Audio Library
+- Free Music Archive
+- Incompetech
+- Bensound
+- Pixabay Music
+
+⚠️ IMPORTANTE: Verifique sempre as licenças antes de usar! 

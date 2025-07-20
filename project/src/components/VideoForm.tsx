@@ -7,7 +7,7 @@ import { Select } from './ui/Select';
 import { TextArea } from './ui/TextArea';
 import { MusicLibrary } from './MusicLibrary';
 import { UploadAppImage, ImagemComDescricao } from './UploadAppImage';
-import { generateVideo, GenerateVideoRequest } from '../services/api';
+import { generateVideo, GenerateVideoRequest, generateScript } from '../services/api';
 import { useToast } from './Toast';
 import { ChatIA } from './ChatIA';
 
@@ -36,6 +36,79 @@ interface AppImage {
   tags: string[];
   liked: boolean;
   size: string;
+}
+
+// Novo componente para revisão/edição do roteiro principal
+function VideoScriptReview({ roteiro, onEdit, onApprove, onRefazer, loading, cenas }: {
+  roteiro: string;
+  onEdit: (novo: string) => void;
+  onApprove: () => void;
+  onRefazer: () => void;
+  loading: boolean;
+  cenas?: Array<{ narracao: string; visual: string[] }>;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState(roteiro);
+  const [showCenas, setShowCenas] = useState(false);
+
+  useEffect(() => { setTexto(roteiro); }, [roteiro]);
+
+  return (
+    <div className="my-6 p-4 border rounded-lg bg-gray-50 dark:bg-gray-800 shadow-md">
+      <h3 className="font-bold text-lg mb-2 text-gray-800 dark:text-gray-100 flex items-center gap-2">
+        <FileText className="w-5 h-5 text-blue-500" /> Roteiro principal para narração
+      </h3>
+      <p className="text-gray-600 dark:text-gray-300 mb-2 text-sm">
+        Este é o texto que será gravado como áudio principal do vídeo. Revise, edite se quiser e só depois aprove para gerar o vídeo.
+      </p>
+      {editando ? (
+        <TextArea
+          value={texto}
+          onChange={e => setTexto(e.target.value)}
+          rows={8}
+          className="w-full mb-2 text-base"
+        />
+      ) : (
+        <div className="whitespace-pre-line bg-white dark:bg-gray-900 p-3 rounded border text-base mb-2 min-h-[120px]">
+          {texto}
+        </div>
+      )}
+      <div className="flex gap-2 mb-2">
+        {editando ? (
+          <Button onClick={() => { onEdit(texto); setEditando(false); }} size="sm" variant="primary">Salvar edição</Button>
+        ) : (
+          <Button onClick={() => setEditando(true)} size="sm" variant="outline">Editar roteiro</Button>
+        )}
+        <Button onClick={onRefazer} size="sm" variant="danger" disabled={loading}>Refazer roteiro</Button>
+        <Button onClick={onApprove} size="sm" variant="primary" disabled={loading}>Aprovar roteiro</Button>
+      </div>
+      {cenas && cenas.length > 0 && (
+        <div className="mt-4">
+          <button
+            className="text-blue-600 dark:text-blue-400 underline text-sm mb-2"
+            onClick={() => setShowCenas(v => !v)}
+          >
+            {showCenas ? 'Ocultar cenas detalhadas' : 'Ver cenas detalhadas (narração e visuais)'}
+          </button>
+          {showCenas && (
+            <div className="bg-gray-100 dark:bg-gray-900 border rounded p-3 mt-2 max-h-72 overflow-y-auto">
+              {cenas.map((cena, idx) => (
+                <div key={idx} className="mb-3">
+                  <div className="font-semibold text-gray-700 dark:text-gray-200">Cena {idx + 1}</div>
+                  <div className="text-blue-700 dark:text-blue-300 mb-1">Narração: <span className="font-normal">{cena.narracao}</span></div>
+                  <ul className="list-disc ml-6 text-gray-600 dark:text-gray-300 text-sm">
+                    {cena.visual && cena.visual.map((v, i) => (
+                      <li key={i}>{v}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
@@ -231,31 +304,68 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
     return "alloy"; // Ou outra voz padrão
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.tema.trim()) {
-      showToast('Por favor, insira um tema para o vídeo', 'warning');
-      return;
-    }
+  // Dentro do VideoForm, adicionar estados para roteiro e controle de revisão
+  const [roteiro, setRoteiro] = useState('');
+  const [roteiroAprovado, setRoteiroAprovado] = useState(false);
+  const [gerandoRoteiro, setGerandoRoteiro] = useState(false);
+  const [roteiroCenas, setRoteiroCenas] = useState<Array<{ narracao: string; visual: string[] }>>([]);
 
-    if (formData.cenas < 1 || formData.cenas > 10) {
-      showToast('Número de cenas deve estar entre 1 e 10', 'warning');
-      return;
+  // Função para gerar roteiro (chama backend ou IA)
+  const handleGerarRoteiro = async () => {
+    setGerandoRoteiro(true);
+    try {
+      const payload = { ...formData, imagensComDescricao };
+      const resposta = await generateScript(payload);
+      // Se resposta for objeto com roteiro e cenas
+      if (resposta && typeof resposta === 'object' && 'roteiro' in resposta) {
+        setRoteiro(String(resposta.roteiro));
+        setRoteiroCenas((resposta && typeof resposta === 'object' && 'cenas' in resposta && Array.isArray((resposta as any).cenas)) ? (resposta as any).cenas : []);
+      } else if (typeof resposta === 'string') {
+        setRoteiro(resposta);
+        setRoteiroCenas([]);
+      } else {
+        setRoteiro('');
+        setRoteiroCenas([]);
+      }
+      setRoteiroAprovado(false);
+    } catch (err) {
+      showToast('Erro ao gerar roteiro', 'error');
+    } finally {
+      setGerandoRoteiro(false);
     }
+  };
 
+  // Função para aprovar roteiro
+  const handleAprovarRoteiro = () => {
+    setRoteiroAprovado(true);
+  };
+  // Função para editar roteiro
+  const handleEditarRoteiro = (novo: string) => {
+    setRoteiro(novo);
+  };
+  // Função para refazer roteiro
+  const handleRefazerRoteiro = () => {
+    handleGerarRoteiro();
+  };
+
+  // Adicione estados para controlar o modo de revisão
+  const [modoRevisao, setModoRevisao] = useState(false);
+
+  // Função para gerar roteiro para revisão
+  const handleGerarRoteiroApenas = async () => {
     setLoading(true);
     try {
+      const publicoMapeado = publicoMap[formData.publico as keyof typeof publicoMap] || formData.publico;
       const payload = {
         tema: formData.tema,
         tipo: tipoMap[formData.tipo as keyof typeof tipoMap] || formData.tipo,
-        publico: publicoMap[formData.publico as keyof typeof publicoMap] || formData.publico,
+        publico: publicoMapeado,
         tom: formData.tom,
         formato: formData.formato,
-        cenas: formData.cenas,
+        cenas: numCenas,
         voz_elevenlabs: getDefaultVoice(formData.tipo),
         musica: selectedMusic?.url,
-        duracao: formData.configuracoes?.duracao || formData.duracao || 60, // Garantir campo duracao na raiz
+        duracao: formData.configuracoes?.duracao || formData.duracao || 60,
         configuracoes: {
           ...formData.configuracoes,
           volumeMusica: musicVolume,
@@ -273,13 +383,91 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
         titulo: formData.titulo,
         gerarLegenda: formData.gerarLegenda,
         plataformaLegenda: formData.plataformaLegenda,
-        cta // Adiciona o CTA customizado ao payload
+        cta,
+        soGerarRoteiro: true
       };
+      const resposta = await generateVideo(payload); // Chama /generate-video com flag
+      // Se resposta for objeto com roteiro e cenas
+      if (resposta && typeof resposta === 'object' && 'roteiro' in resposta) {
+        setRoteiro(String(resposta.roteiro));
+        setRoteiroCenas((resposta && typeof resposta === 'object' && 'cenas' in resposta && Array.isArray((resposta as any).cenas)) ? (resposta as any).cenas : []);
+      } else if (typeof resposta === 'string') {
+        setRoteiro(resposta);
+        setRoteiroCenas([]);
+      } else {
+        setRoteiro('');
+        setRoteiroCenas([]);
+      }
+      setRoteiroAprovado(false);
+      setModoRevisao(true);
+      showToast('Roteiro gerado! Revise, edite e aprove antes de gerar o vídeo.', 'info');
+    } catch (err) {
+      showToast('Erro ao gerar roteiro', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  // Função para gerar vídeo completo direto
+  const handleGerarVideoCompleto = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!formData.tema.trim()) {
+      showToast('Por favor, insira um tema para o vídeo', 'warning');
+      return;
+    }
+    if (numCenas < 1 || numCenas > 10) {
+      showToast('Número de cenas deve estar entre 1 e 10', 'warning');
+      return;
+    }
+    setLoading(true);
+    try {
+      const publicoMapeado = publicoMap[formData.publico as keyof typeof publicoMap] || formData.publico;
+      
+      // Log detalhado da música selecionada
+      console.log('🎵 Música selecionada:', selectedMusic);
+      console.log('🎵 URL da música:', selectedMusic?.url);
+      console.log('🎵 Configurações de música:', {
+        volume: musicVolume,
+        fadeIn: musicFadeIn,
+        fadeOut: musicFadeOut,
+        loop: musicLoop
+      });
+      
+      const payload = {
+        tema: formData.tema,
+        tipo: tipoMap[formData.tipo as keyof typeof tipoMap] || formData.tipo,
+        publico: publicoMapeado,
+        tom: formData.tom,
+        formato: formData.formato,
+        cenas: numCenas,
+        voz_elevenlabs: getDefaultVoice(formData.tipo),
+        musica: selectedMusic?.url,
+        duracao: formData.configuracoes?.duracao || formData.duracao || 60,
+        configuracoes: {
+          ...formData.configuracoes,
+          volumeMusica: musicVolume,
+          fadeInMusica: musicFadeIn,
+          fadeOutMusica: musicFadeOut,
+          loopMusica: musicLoop
+        },
+        imagensApp: selectedImages.map(img => img.url),
+        imagensComDescricao: imagensComDescricao.map(img => ({
+          url: img.url,
+          descricao: img.descricao,
+          categoria: img.categoria
+        })),
+        useStableDiffusion,
+        titulo: formData.titulo,
+        gerarLegenda: formData.gerarLegenda,
+        plataformaLegenda: formData.plataformaLegenda,
+        cta
+      };
+      
+      console.log('📦 Payload completo enviado:', payload);
+      
       const video = await generateVideo(payload);
       onVideoGenerated(video);
       showToast('Vídeo gerado com sucesso!', 'success');
-      
       // Reset form
       setFormData({
         tema: '',
@@ -288,22 +476,113 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
         cenas: 5,
         formato: 'portrait',
         voz_elevenlabs: 'alloy',
-        duracao: 30, // Reset do campo duracao na raiz
+        duracao: 30,
         configuracoes: {
           duracao: 30,
           qualidade: 'alta',
           estilo: 'moderno'
         },
         tom: 'intimo',
-        titulo: '', // Reset do novo campo
-        gerarLegenda: false, // Reset do novo campo
-        plataformaLegenda: 'instagram' // Reset do novo campo
+        titulo: '',
+        gerarLegenda: false,
+        plataformaLegenda: 'instagram'
       });
       setSelectedMusic(null);
       setSelectedImages([]);
       setImagensComDescricao([]);
-      setCta(''); // Reset do campo CTA
+      setCta('');
+      setRoteiro('');
+      setRoteiroAprovado(false);
+      setGerandoRoteiro(false);
+      setRoteiroCenas([]);
+      setModoRevisao(false);
+    } catch (error) {
+      showToast('Erro ao gerar vídeo', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Função para aprovar roteiro e gerar vídeo após revisão
+  const handleAprovarEEnviarVideo = async () => {
+    setLoading(true);
+    try {
+      const publicoMapeado = publicoMap[formData.publico as keyof typeof publicoMap] || formData.publico;
       
+      // Log detalhado da música selecionada
+      console.log('🎵 Música selecionada:', selectedMusic);
+      console.log('🎵 URL da música:', selectedMusic?.url);
+      console.log('🎵 Configurações de música:', {
+        volume: musicVolume,
+        fadeIn: musicFadeIn,
+        fadeOut: musicFadeOut,
+        loop: musicLoop
+      });
+      
+      const payload = {
+        tema: formData.tema,
+        tipo: tipoMap[formData.tipo as keyof typeof tipoMap] || formData.tipo,
+        publico: publicoMapeado,
+        tom: formData.tom,
+        formato: formData.formato,
+        roteiro,
+        cenas: roteiroCenas.length > 0 ? roteiroCenas : numCenas,
+        voz_elevenlabs: getDefaultVoice(formData.tipo),
+        musica: selectedMusic?.url,
+        duracao: formData.configuracoes?.duracao || formData.duracao || 60,
+        configuracoes: {
+          ...formData.configuracoes,
+          volumeMusica: musicVolume,
+          fadeInMusica: musicFadeIn,
+          fadeOutMusica: musicFadeOut,
+          loopMusica: musicLoop
+        },
+        imagensApp: selectedImages.map(img => img.url),
+        imagensComDescricao: imagensComDescricao.map(img => ({
+          url: img.url,
+          descricao: img.descricao,
+          categoria: img.categoria
+        })),
+        useStableDiffusion,
+        titulo: formData.titulo,
+        gerarLegenda: formData.gerarLegenda,
+        plataformaLegenda: formData.plataformaLegenda,
+        cta
+      };
+      
+      console.log('📦 Payload completo enviado:', payload);
+      
+      const video = await generateVideo(payload);
+      onVideoGenerated(video);
+      showToast('Vídeo gerado com sucesso!', 'success');
+      // Reset form
+      setFormData({
+        tema: '',
+        tipo: 'anuncio',
+        publico: 'maes_primeira_viagem',
+        cenas: 5,
+        formato: 'portrait',
+        voz_elevenlabs: 'alloy',
+        duracao: 30,
+        configuracoes: {
+          duracao: 30,
+          qualidade: 'alta',
+          estilo: 'moderno'
+        },
+        tom: 'intimo',
+        titulo: '',
+        gerarLegenda: false,
+        plataformaLegenda: 'instagram'
+      });
+      setSelectedMusic(null);
+      setSelectedImages([]);
+      setImagensComDescricao([]);
+      setCta('');
+      setRoteiro('');
+      setRoteiroAprovado(false);
+      setGerandoRoteiro(false);
+      setRoteiroCenas([]);
+      setModoRevisao(false);
     } catch (error) {
       showToast('Erro ao gerar vídeo', 'error');
     } finally {
@@ -419,6 +698,9 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
     'Transforme seu negócio, saiba mais!',
   ];
 
+  // 1. Definir numCenas para uso em todo o componente
+  const numCenas = typeof formData.cenas === 'number' ? formData.cenas : (Array.isArray(formData.cenas) ? formData.cenas.length : 0);
+
   return (
     <div className="flex flex-col md:flex-row gap-8">
       <div className="flex-1">
@@ -463,7 +745,7 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
         {/* Tab Content */}
         {activeTab === 'form' && (
           <Card gradient hover>
-            <form onSubmit={handleSubmit} className="space-y-8">
+            <form className="space-y-8" onSubmit={e => e.preventDefault()}>
               {/* Tema */}
               <div>
                 <label className="flex items-center space-x-2 text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -733,12 +1015,12 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
                     type="number"
                     min="1"
                     max="10"
-                    value={formData.cenas}
+                    value={numCenas}
                     onChange={(e) => handleInputChange('cenas', parseInt(e.target.value))}
                     className="text-lg text-center"
                   />
                   <p className="text-sm text-gray-500 mt-2 text-center">
-                    {formData.cenas} cena{formData.cenas > 1 ? 's' : ''} • ~{Math.round((formData.configuracoes?.duracao || 30) / formData.cenas)}s por cena
+                    {numCenas} cena{numCenas > 1 ? 's' : ''} • ~{numCenas > 0 ? Math.round((formData.configuracoes?.duracao || 30) / numCenas) : 0}s por cena
                   </p>
                 </div>
 
@@ -787,7 +1069,7 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
                     <span className="font-semibold text-green-800 dark:text-green-200">Configuração</span>
                   </div>
                   <p className="text-sm text-green-700 dark:text-green-300">
-                    {formData.configuracoes?.duracao}s • {formData.cenas} cenas
+                    {formData.configuracoes?.duracao}s • {numCenas} cenas
                   </p>
                   <p className="text-xs text-green-600 dark:text-green-400">
                     {formatoOptions.find(f => f.value === formData.formato)?.label}
@@ -796,27 +1078,88 @@ export const VideoForm: React.FC<VideoFormProps> = ({ onVideoGenerated }) => {
               </div>
 
               {/* Generate Button */}
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                loading={loading}
-                disabled={loading || !formData.tema.trim()}
-                icon={loading ? undefined : Sparkles}
-                className="w-full text-xl py-4"
-              >
-                {loading ? (
-                  <span className="flex items-center">
-                    <span className="animate-spin mr-2">⚡</span>
-                    Gerando seu vídeo mágico...
-                  </span>
-                ) : (
-                  <span className="flex items-center">
-                    <span className="mr-2">✨</span>
-                    Gerar Vídeo Completo
-                  </span>
-                )}
-              </Button>
+              {roteiro && (
+                <VideoScriptReview
+                  roteiro={roteiro}
+                  onEdit={handleEditarRoteiro}
+                  onApprove={handleAprovarRoteiro}
+                  onRefazer={handleRefazerRoteiro}
+                  loading={gerandoRoteiro}
+                  cenas={roteiroCenas}
+                />
+              )}
+              {!modoRevisao && (
+                <div className="flex gap-4">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="lg"
+                    loading={loading}
+                    disabled={loading || !formData.tema.trim()}
+                    onClick={handleGerarVideoCompleto}
+                    icon={loading ? undefined : Play}
+                    className="w-full text-xl py-4"
+                  >
+                    {loading ? (
+                      <span className="flex items-center">
+                        <span className="animate-spin mr-2">⚡</span>
+                        Gerando seu vídeo mágico...
+                      </span>
+                    ) : (
+                      <span className="flex items-center">
+                        <span className="mr-2">✨</span>
+                        Gerar Vídeo Completo
+                      </span>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    loading={loading}
+                    disabled={loading || !formData.tema.trim()}
+                    onClick={handleGerarRoteiroApenas}
+                    icon={loading ? undefined : Sparkles}
+                    className="w-full text-xl py-4"
+                  >
+                    {loading ? (
+                      <span className="flex items-center">
+                        <span className="animate-spin mr-2">⚡</span>
+                        Gerando seu vídeo mágico...
+                      </span>
+                    ) : (
+                      <span className="flex items-center">
+                        <span className="mr-2">✨</span>
+                        Gerar Roteiro
+                      </span>
+                    )}
+                  </Button>
+                </div>
+              )}
+              {modoRevisao && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="lg"
+                  loading={loading}
+                  disabled={loading || !formData.tema.trim()}
+                  onClick={handleAprovarEEnviarVideo}
+                  icon={loading ? undefined : Sparkles}
+                  className="w-full text-xl py-4"
+                >
+                  {loading ? (
+                    <span className="flex items-center">
+                      <span className="animate-spin mr-2">⚡</span>
+                      Gerando seu vídeo mágico...
+                    </span>
+                  ) : (
+                    <span className="flex items-center">
+                      <span className="mr-2">✨</span>
+                      Aprovar e Gerar Vídeo
+                    </span>
+                  )}
+                </Button>
+              )}
               {loading && <div className="flex items-center gap-2 mt-4"><span className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900"></span> Gerando vídeo, aguarde...</div>}
             </form>
           </Card>

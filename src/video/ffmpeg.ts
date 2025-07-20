@@ -399,11 +399,10 @@ export function addBackgroundMusic(
       musicFilter += `,aloop=loop=-1:size=2e+09`;
     }
 
-    // Peso da música ainda menor (0.15) para não embolar a narração
-    const musicWeight = 0.15;
-    const command = `ffmpeg -y -i "${inputVideo}" -i "${musicPath}" -filter_complex "[1:a]${musicFilter}[bgmusic];[0:a][bgmusic]amix=inputs=2:duration=shortest:weights=1,${musicWeight}" -c:v copy -c:a aac -b:a 192k "${outputVideo}"`;
+    // Usar sintaxe mais simples e compatível
+    const command = `ffmpeg -y -i "${inputVideo}" -i "${musicPath}" -filter_complex "[1:a]${musicFilter}[bgmusic];[0:a][bgmusic]amix=inputs=2:duration=shortest" -c:v copy -c:a aac -b:a 192k "${outputVideo}"`;
     
-    log(`🎵 [MIXAGEM] Adicionando música de fundo (volume: ${volume}, peso: ${musicWeight}, fadeIn: ${fadeIn}, fadeOut: ${fadeOut}, duração vídeo: ${videoDuration}): ${command}`);
+    log(`🎵 [MIXAGEM] Adicionando música de fundo (volume: ${volume}, fadeIn: ${fadeIn}, fadeOut: ${fadeOut}, duração vídeo: ${videoDuration}): ${command}`);
     execSync(command);
 
     // Verificar se o arquivo foi criado
@@ -417,7 +416,7 @@ export function addBackgroundMusic(
     // Fallback mais robusto: tentar com comando mais simples
     try {
       log(`🔄 Tentando fallback com comando simples...`);
-      const fallbackCommand = `ffmpeg -y -i "${inputVideo}" -i "${musicPath}" -filter_complex "[1:a]volume=${volume}[bgmusic];[0:a][bgmusic]amix=inputs=2:duration=shortest:weights=1,0.15" -c:v copy "${outputVideo}"`;
+      const fallbackCommand = `ffmpeg -y -i "${inputVideo}" -i "${musicPath}" -filter_complex "[1:a]volume=${volume}[bgmusic];[0:a][bgmusic]amix=inputs=2:duration=shortest" -c:v copy "${outputVideo}"`;
       execSync(fallbackCommand);
       log(`✅ Fallback executado com sucesso`);
     } catch (fallbackError) {

@@ -1,0 +1,40 @@
+{
+  "fonts": {
+    "modern": {
+      "name": "Modern Font",
+      "file": "modern.png",
+      "style": "bold",
+      "color": "#2C3E50",
+      "size": 28
+    },
+    "elegant": {
+      "name": "Elegant Font",
+      "file": "elegant.png",
+      "style": "normal",
+      "color": "#8E44AD",
+      "size": 24
+    },
+    "corporate": {
+      "name": "Corporate Font",
+      "file": "corporate.png",
+      "style": "bold",
+      "color": "#34495E",
+      "size": 26
+    },
+    "creative": {
+      "name": "Creative Font",
+      "file": "creative.png",
+      "style": "normal",
+      "color": "#E67E22",
+      "size": 22
+    },
+    "basic": {
+      "name": "Basic Font",
+      "file": "basic.png",
+      "style": "normal",
+      "color": "#FFFFFF",
+      "size": 32
+    }
+  },
+  "default": "modern"
+}

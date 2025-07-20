@@ -135,4 +135,5 @@ test-*.ts
 prisma/migrations/
 
 # TypeScript
-*.tsbuildinfo
+*.tsbuildinfobabyvideoia.zip
+babyvideoia.zip

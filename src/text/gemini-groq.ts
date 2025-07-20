@@ -230,6 +230,13 @@ export async function generateScript(
           "O Baby Diary White Label é a ferramenta que faltava no seu arsenal.",
           "Transforme seu conhecimento em um negócio escalável agora!"
         ],
+        agencias: [
+          "Sua agência quer oferecer inovação para clientes do nicho materno?",
+          "Com o Baby Diary White Label, você entrega um SaaS pronto, com branding próprio.",
+          "Automação total, painel admin, relatórios e suporte completo.",
+          "Aumente seu portfólio e sua receita recorrente sem esforço.",
+          "Solicite uma demonstração e veja como é fácil vender SaaS!"
+        ],
         empreendedores: [
           "Quer entrar no mercado de apps sem investir milhões?",
           "Muitos empreendedores perdem oportunidades por não terem a solução certa...",

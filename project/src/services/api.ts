@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Detectar ambiente para definir a baseURL correta
 const isProd = typeof window !== 'undefined' && window.location.hostname.endsWith('babydiary.shop');
-const API_BASE_URL = 'https://videos.babydiary.shop/api';
+const API_BASE_URL = 'http://localhost:3001/api';
 // Se o backend mudar de domínio, ajuste o valor acima.
 
 const api = axios.create({
@@ -44,7 +44,7 @@ export interface GenerateVideoRequest {
   publico: string;
   tom: string;
   duracao: number;
-  cenas: number;
+  cenas: number | Array<{ narracao: string; visual: string[] }>;
   formato: string;
   voz_elevenlabs: string;
   musica?: string;
@@ -67,6 +67,9 @@ export interface GenerateVideoRequest {
     descricao: string;
     categoria: 'funcionalidade' | 'painel_admin' | 'user_interface' | 'pagamento' | 'loja' | 'atividades' | 'diario' | 'outros';
   }>;
+  cta?: string;
+  soGerarRoteiro?: boolean;
+  roteiro?: string;
 }
 
 export interface Video {
@@ -258,6 +261,12 @@ export const getUserImages = async (): Promise<UserImage[]> => {
 // Delete user image (nova função)
 export const deleteUserImage = async (id: string): Promise<void> => {
   await api.delete(`/user-images/${id}`);
+};
+
+// Geração de roteiro (novo endpoint)
+export const generateScript = async (data: GenerateVideoRequest): Promise<{ roteiro: string }> => {
+  const response = await api.post('/generate-script', data);
+  return response.data;
 };
 
 export default api;

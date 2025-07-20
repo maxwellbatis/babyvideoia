@@ -167,6 +167,7 @@ export interface GenerateVideoPayload {
     loopMusica?: boolean;
   };
   cta?: string; // Novo campo para CTA visual
+  roteiro?: string; // Novo campo para roteiro
 }
 
 export interface VideoResult {
@@ -773,31 +774,33 @@ export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<V
     // Sugerir CTA automaticamente se não vier do frontend
     let ctaFinal = payload.cta && payload.cta.trim() !== '' ? payload.cta : sugerirCTAAutomatico(publico);
 
-    // Prompt dinâmico para IA - versão VSL contínua e natural
-    const promptIA = `Gere um roteiro VSL para vídeo sobre "${payload.tema}".
-
-REQUISITOS:
-- Crie um campo "roteiro" (ou "script_audio") com o texto completo, FLUIDO, HUMANO, direcionado diretamente ao público-alvo, SEM SSML, SEM blocos curtos, para ser usado na narração principal do vídeo (áudio ElevenLabs). O texto deve ser natural, envolvente, com tom adaptado ao público e ao tipo de vídeo.
-- No FINAL do campo "roteiro", inclua um call-to-action (CTA) natural e persuasivo, adaptando a mensagem ao público:
-  - Se o público for mães, gestantes, pais ou familiares: incentive a baixar o app Baby Diary.
-  - Se o público for afiliados, agências, influenciadoras, criadores de infoprodutos, empreendedores, consultores, revendedores, startups, profissionais liberais ou educadores: incentive a conhecer o Baby Diary White Label, criar seu próprio app, ou solicitar uma demonstração.
-  - O CTA deve ser integrado ao texto, nunca colado de forma artificial.
-- Crie um campo "cenas", que é um array de objetos, cada um com:
-  - "narracao": frase curta (pode usar SSML para emoção, pausa, ênfase) para servir de referência visual para a cena.
-  - "visual": array de 3 descrições detalhadas para imagens da cena (varie ângulo, foco, emoção, ação, iluminação, etc).
-- NÃO use blocos markdown (não coloque \`\`\`json ou \`\`\` no início/fim da resposta). Apenas retorne o JSON puro.
-- O campo "roteiro" será usado para gravar o áudio principal no ElevenLabs, então deve ser um texto contínuo, natural, sem SSML.
-
-Exemplo de resposta:
-{
-  "roteiro": "Texto fluido, humano, para o áudio principal... No final, CTA natural e adaptado ao público!",
-  "cenas": [
-    {
-      "narracao": "<speak>Frase curta para a cena</speak>",
-      "visual": ["Prompt 1", "Prompt 2", "Prompt 3"]
+    // Função para identificar se é público de negócio
+    function isPublicoNegocio(publico: string): boolean {
+      const negocios = [
+        'Influenciadoras digitais',
+        'Afiliados e parceiros',
+        'Criadores de infoprodutos',
+        'Empreendedores',
+        'Agências de marketing',
+        'Consultores e coaches',
+        'Revendedores',
+        'Startups',
+        'Profissionais liberais',
+        'Educadores'
+      ];
+      return negocios.includes(publico);
     }
-  ]
-}`;
+
+    // Prompt dinâmico para IA - versão VSL contínua e natural
+    let promptIA = '';
+    // Adicionar contexto das imagens enviadas pelo usuário
+    let contextoImagens = '';
+    if (payload.imagensComDescricao && payload.imagensComDescricao.length > 0) {
+      contextoImagens = `\n\nIMAGENS ENVIADAS PELO USUÁRIO (use estas descrições como contexto visual):\n${payload.imagensComDescricao.map((img, idx) => 
+        `Cena ${idx + 1}: ${img.descricao} (Categoria: ${img.categoria})`
+      ).join('\n')}\n\nIMPORTANTE: Se o usuário enviou imagens, use as descrições delas como base para o roteiro. Incorpore os elementos visuais descritos nas narrações e mantenha a coerência com o contexto das imagens.`;
+    }
+    promptIA = `Gere um roteiro VSL para vídeo sobre "${payload.tema}".\n\nREQUISITOS:\n- Crie um campo \"roteiro\" (ou \"script_audio\") com o texto completo, FLUIDO, HUMANO, direcionado diretamente ao público-alvo, SEM SSML, SEM blocos curtos, para ser usado na narração principal do vídeo (áudio ElevenLabs). O texto deve ser natural, envolvente, com tom adaptado ao público e ao tipo de vídeo.\n- No FINAL do campo \"roteiro\", inclua um call-to-action (CTA) natural e persuasivo, adaptando a mensagem ao público.\n- Crie um campo \"cenas\", que é um array de objetos, cada um com:\n  - \"narracao\": frase curta (pode usar SSML para emoção, pausa, ênfase) para servir de referência visual para a cena.\n  - \"visual\": array de 3 descrições detalhadas para imagens da cena (varie ângulo, foco, emoção, ação, iluminação, etc).\n- NÃO use blocos markdown (não coloque codigo json ou codigo no início/fim da resposta). Apenas retorne o JSON puro.\n- O campo \"roteiro\" será usado para gravar o áudio principal no ElevenLabs, então deve ser um texto contínuo, natural, sem SSML.\n${contextoImagens}\n\nIMPORTANTE: Se não retornar o campo 'roteiro', tente novamente e seja ainda mais explícito para garantir que o campo 'roteiro' venha preenchido como texto corrido, fluido, humano, para narração principal.`;
     log(`🧠 Prompt dinâmico para IA (robusto): ${promptIA}`);
 
     // Criar diretórios necessários
@@ -810,130 +813,158 @@ Exemplo de resposta:
       fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    // 1. Gerar roteiro via IA
-    log('🤖 Gerando roteiro completo via IA...');
+    // Definir apiKey antes do bloco para evitar erro de escopo
     const apiKey = await getCredential('GEMINI_KEY');
     if (!apiKey) throw new Error('GEMINI_KEY não configurada no banco.');
-    const numeroCenas = typeof payload.cenas === 'number' ? payload.cenas : 5;
-    let roteiroIAString = await generateScript(promptIA, apiKey);
-    log('🟢 RESPOSTA BRUTA DA IA: ' + roteiroIAString);
-    
-    // Parse do JSON com correção automática mais robusta
-    let roteiroIA: any;
-    try {
-      roteiroIA = JSON.parse(roteiroIAString);
-      // NOVO: Se for array direto, transformar em objeto com cenas
-      if (Array.isArray(roteiroIA)) {
-        // Se for array de objetos com chave 'cenas', juntar todas as cenas
-        if (roteiroIA.length > 0 && roteiroIA.every(item => typeof item === 'object' && item.cenas && Array.isArray(item.cenas))) {
-          const cenasUnificadas = roteiroIA.flatMap(item => item.cenas);
-          roteiroIA = { cenas: cenasUnificadas };
-          log('✅ JSON reconhecido como array de objetos com cenas, unificado para objeto com todas as cenas.');
-        } else {
-          roteiroIA = { cenas: roteiroIA };
-          log('✅ JSON reconhecido como array direto, convertido para objeto com cenas.');
+    // NOVO: Usar roteiro e cenas do payload, se vierem prontos
+    let roteiroIA: any = null;
+    if (payload.roteiro && Array.isArray(payload.cenas) && payload.cenas.length > 0) {
+      // Se já veio roteiro e cenas aprovados, usar direto
+      roteiroIA = {
+        roteiro: payload.roteiro,
+        cenas: payload.cenas
+      };
+      log('✅ Usando roteiro e cenas enviados pelo frontend (aprovados pelo usuário).');
+    } else {
+      // Se não veio, gerar normalmente
+      // ... código existente de geração de roteiro ...
+      // (copiar o trecho de geração de roteiro/cenas IA daqui para baixo)
+
+      // 1. Gerar roteiro via IA
+      log('🤖 Gerando roteiro completo via IA...');
+      const numeroCenas = typeof payload.cenas === 'number' ? payload.cenas : 5;
+      let roteiroIAString = await generateScript(promptIA, apiKey);
+      log('🟢 RESPOSTA BRUTA DA IA: ' + roteiroIAString);
+      
+      // Pós-processamento: se público de negócio e roteiro mencionar "baixe o app" ou "registre memórias", tentar novamente
+      if (isPublicoNegocio(publico) && /baixe o app|registre memórias|mãe|bebê/i.test(roteiroIAString)) {
+        log('⚠️ Roteiro gerado para público de negócio contém termos de uso pessoal. Tentando novamente com prompt ainda mais explícito.');
+        promptIA += '\n\nATENÇÃO: NÃO FALE SOBRE USO PESSOAL DO APP, NÃO FALE PARA MÃES. FOQUE APENAS EM VENDER O SAAS, LUCRO, ESCALABILIDADE, ETC.';
+        roteiroIAString = await generateScript(promptIA, apiKey);
+        log('🟢 RESPOSTA BRUTA DA IA (tentativa 2): ' + roteiroIAString);
+        if (/baixe o app|registre memórias|mãe|bebê/i.test(roteiroIAString)) {
+          log('❌ Ainda gerou roteiro errado para público de negócio. Alerta: revise o prompt ou edite manualmente.');
+          // Aqui pode-se lançar um erro, alertar o usuário ou permitir edição manual no frontend
         }
       }
-      // NOVO: Se não tiver roteiro contínuo, criar a partir das cenas (fallback)
-      if (!roteiroIA.roteiro && roteiroIA.cenas) {
-        roteiroIA.roteiro = roteiroIA.cenas.map(cena => cena.trecho || cena.narracao || '').join(' ');
-        log('✅ Roteiro contínuo criado a partir das cenas (fallback).');
-      }
-      log(`✅ JSON parseado com sucesso na primeira tentativa`);
-    } catch (e) {
-      log(`⚠️ Erro no JSON original: ${e.message}`);
-      log(`🔧 Tentando corrigir JSON...`);
-      log(`📋 Resposta bruta da IA: ${roteiroIAString.substring(0, 200)}...`);
-      // NOVO: tentar corrigir JSON malformado
+      
+      // Parse do JSON com correção automática mais robusta
+      let roteiroIA: any;
       try {
-        const jsonCorrigido = corrigirJsonMalformado(roteiroIAString);
-        log('🛠️ JSON corrigido automaticamente:\n' + jsonCorrigido.substring(0, 400));
-        roteiroIA = JSON.parse(jsonCorrigido);
-        log('✅ JSON corrigido parseado com sucesso!');
-      } catch (e2) {
-        log(`❌ Falha ao corrigir JSON: ${e2.message}`);
-        // Fallback: tenta extrair cenas individualmente (como já faz)
-        // ...restante do código de fallback...
+        roteiroIA = JSON.parse(roteiroIAString);
+        // NOVO: Se for array direto, transformar em objeto com cenas
+        if (Array.isArray(roteiroIA)) {
+          // Se for array de objetos com chave 'cenas', juntar todas as cenas
+          if (roteiroIA.length > 0 && roteiroIA.every(item => typeof item === 'object' && item.cenas && Array.isArray(item.cenas))) {
+            const cenasUnificadas = roteiroIA.flatMap(item => item.cenas);
+            roteiroIA = { cenas: cenasUnificadas };
+            log('✅ JSON reconhecido como array de objetos com cenas, unificado para objeto com todas as cenas.');
+          } else {
+            roteiroIA = { cenas: roteiroIA };
+            log('✅ JSON reconhecido como array direto, convertido para objeto com cenas.');
+          }
+        }
+        // NOVO: Se não tiver roteiro contínuo, criar a partir das cenas (fallback)
+        if (!roteiroIA.roteiro && roteiroIA.cenas) {
+          roteiroIA.roteiro = roteiroIA.cenas.map(cena => cena.trecho || cena.narracao || '').join(' ');
+          log('✅ Roteiro contínuo criado a partir das cenas (fallback).');
+        }
+        log(`✅ JSON parseado com sucesso na primeira tentativa`);
+      } catch (e) {
+        log(`⚠️ Erro no JSON original: ${e.message}`);
+        log(`🔧 Tentando corrigir JSON...`);
+        log(`📋 Resposta bruta da IA: ${roteiroIAString.substring(0, 200)}...`);
+        // NOVO: tentar corrigir JSON malformado
+        try {
+          const jsonCorrigido = corrigirJsonMalformado(roteiroIAString);
+          log('🛠️ JSON corrigido automaticamente:\n' + jsonCorrigido.substring(0, 400));
+          roteiroIA = JSON.parse(jsonCorrigido);
+          log('✅ JSON corrigido parseado com sucesso!');
+        } catch (e2) {
+          log(`❌ Falha ao corrigir JSON: ${e2.message}`);
+          // Fallback: tenta extrair cenas individualmente (como já faz)
+          // ...restante do código de fallback...
+        }
       }
-    }
-    
-    if (!roteiroIA || !Array.isArray(roteiroIA.cenas)) {
-      log(`❌ Roteiro inválido após todas as tentativas. RoteiroIA: ${JSON.stringify(roteiroIA)}`);
-      throw new Error('Falha ao gerar roteiro: resposta inválida da IA.');
-    }
+      
+      if (!roteiroIA || !Array.isArray(roteiroIA.cenas)) {
+        log(`❌ Roteiro inválido após todas as tentativas. RoteiroIA: ${JSON.stringify(roteiroIA)}`);
+        throw new Error('Falha ao gerar roteiro: resposta inválida da IA.');
+      }
 
-    // Após o parse do roteiroIA, garantir que todas as cenas tenham 3 descrições visuais
-    let tentativasRoteiro = 0;
-    while (tentativasRoteiro < 3) {
-      let precisaReenviar = false;
+      // Após o parse do roteiroIA, garantir que todas as cenas tenham 3 descrições visuais
+      let tentativasRoteiro = 0;
+      while (tentativasRoteiro < 3) {
+        let precisaReenviar = false;
+        for (let i = 0; i < roteiroIA.cenas.length; i++) {
+          let visual = roteiroIA.cenas[i].visual;
+          let visuais = Array.isArray(visual) ? visual : [visual];
+          if (visuais.length < 3) {
+            precisaReenviar = true;
+            break;
+          }
+        }
+        if (!precisaReenviar) break;
+        // Se precisar reenviar, pede novamente para a IA
+        tentativasRoteiro++;
+        log(`⚠️ Roteiro IA veio com menos de 3 descrições visuais em alguma cena. Tentando novamente (${tentativasRoteiro}/3)...`);
+        roteiroIAString = await generateScript(promptIA, apiKey);
+        try {
+          roteiroIA = JSON.parse(roteiroIAString);
+        } catch (e) {
+          log('❌ Erro ao parsear novo roteiro IA, usando fallback.');
+          roteiroIA = { cenas: [] };
+        }
+      }
+      // Se mesmo assim não vier, completa localmente
       for (let i = 0; i < roteiroIA.cenas.length; i++) {
         let visual = roteiroIA.cenas[i].visual;
         let visuais = Array.isArray(visual) ? visual : [visual];
-        if (visuais.length < 3) {
-          precisaReenviar = true;
-          break;
-        }
-      }
-      if (!precisaReenviar) break;
-      // Se precisar reenviar, pede novamente para a IA
-      tentativasRoteiro++;
-      log(`⚠️ Roteiro IA veio com menos de 3 descrições visuais em alguma cena. Tentando novamente (${tentativasRoteiro}/3)...`);
-      roteiroIAString = await generateScript(promptIA, apiKey);
-      try {
-        roteiroIA = JSON.parse(roteiroIAString);
-      } catch (e) {
-        log('❌ Erro ao parsear novo roteiro IA, usando fallback.');
-        roteiroIA = { cenas: [] };
-      }
-    }
-    // Se mesmo assim não vier, completa localmente
-    for (let i = 0; i < roteiroIA.cenas.length; i++) {
-      let visual = roteiroIA.cenas[i].visual;
-      let visuais = Array.isArray(visual) ? visual : [visual];
-      while (visuais.length < 3) {
-        visuais.push(visuais[visuais.length - 1] || `Imagem extra da cena ${i + 1}`);
-      }
-      roteiroIA.cenas[i].visual = visuais;
-    }
-
-    // --- INÍCIO DO FLUXO DE FALLBACK INTELIGENTE PARA DESCRIÇÕES VISUAIS ---
-    for (let i = 0; i < roteiroIA.cenas.length; i++) {
-      let visual = roteiroIA.cenas[i].visual;
-      // Garante que visual é array
-      let visuais = Array.isArray(visual) ? visual : [visual];
-      
-      // Se não tem 3 descrições, completar automaticamente
-      if (visuais.length < 3) {
-        log(`⚠️ Cena ${i + 1} veio com apenas ${visuais.length} descrições visuais. Completando automaticamente...`);
-        
-        // Fallback local: completar automaticamente com descrições contextuais
         while (visuais.length < 3) {
-          const contexto = `${payload.tema}, ${payload.tipo}, ${payload.publico}`;
-          const variacoes = [
-            `Imagem relacionada ao tema: ${contexto}`,
-            `Variação da cena: ${contexto} (ângulo diferente)`,
-            `Elemento visual complementar: ${contexto}`
-          ];
-          visuais.push(variacoes[visuais.length] || `Imagem extra: ${contexto} (variação ${visuais.length + 1})`);
+          visuais.push(visuais[visuais.length - 1] || `Imagem extra da cena ${i + 1}`);
         }
         roteiroIA.cenas[i].visual = visuais;
-        log(`✅ Cena ${i + 1} completada com ${visuais.length} descrições visuais.`);
       }
-      
-      // Garantir que não há descrições vazias
-      visuais = visuais.map((desc, idx) => {
-        if (!desc || desc.trim() === '') {
-          const contexto = `${payload.tema}, ${payload.tipo}, ${payload.publico}`;
-          return `Imagem ${idx + 1} da cena ${i + 1}: ${contexto}`;
-        }
-        return desc;
-      });
-      
-      roteiroIA.cenas[i].visual = visuais;
-    }
-    // --- FIM DO FLUXO DE FALLBACK INTELIGENTE ---
 
-    log(`✅ Roteiro IA válido com ${roteiroIA.cenas.length} cenas`);
+      // --- INÍCIO DO FLUXO DE FALLBACK INTELIGENTE PARA DESCRIÇÕES VISUAIS ---
+      for (let i = 0; i < roteiroIA.cenas.length; i++) {
+        let visual = roteiroIA.cenas[i].visual;
+        // Garante que visual é array
+        let visuais = Array.isArray(visual) ? visual : [visual];
+        
+        // Se não tem 3 descrições, completar automaticamente
+        if (visuais.length < 3) {
+          log(`⚠️ Cena ${i + 1} veio com apenas ${visuais.length} descrições visuais. Completando automaticamente...`);
+          
+          // Fallback local: completar automaticamente com descrições contextuais
+          while (visuais.length < 3) {
+            const contexto = `${payload.tema}, ${payload.tipo}, ${payload.publico}`;
+            const variacoes = [
+              `Imagem relacionada ao tema: ${contexto}`,
+              `Variação da cena: ${contexto} (ângulo diferente)`,
+              `Elemento visual complementar: ${contexto}`
+            ];
+            visuais.push(variacoes[visuais.length] || `Imagem extra: ${contexto} (variação ${visuais.length + 1})`);
+          }
+          roteiroIA.cenas[i].visual = visuais;
+          log(`✅ Cena ${i + 1} completada com ${visuais.length} descrições visuais.`);
+        }
+        
+        // Garantir que não há descrições vazias
+        visuais = visuais.map((desc, idx) => {
+          if (!desc || desc.trim() === '') {
+            const contexto = `${payload.tema}, ${payload.tipo}, ${payload.publico}`;
+            return `Imagem ${idx + 1} da cena ${i + 1}: ${contexto}`;
+          }
+          return desc;
+        });
+        
+        roteiroIA.cenas[i].visual = visuais;
+      }
+      // --- FIM DO FLUXO DE FALLBACK INTELIGENTE ---
+
+      log(`✅ Roteiro IA válido com ${roteiroIA.cenas.length} cenas`);
+    }
 
     // 2. Gerar título do vídeo (se não fornecido)
     let tituloFinal = payload.titulo;
@@ -1235,19 +1266,32 @@ Exemplo de resposta:
     let videoComMusica = videoFinal;
     if (payload.musica) {
       log('🎵 Adicionando música de fundo...');
-      const { addBackgroundMusic } = require('../video/ffmpeg');
+      log(`🎵 Música recebida do frontend: ${payload.musica}`);
       
       try {
+        const { addBackgroundMusic } = require('../video/ffmpeg');
+        log(`✅ Função addBackgroundMusic importada: ${typeof addBackgroundMusic}`);
+        
         const videoComMusicaPath = path.join(outputDir, `video_com_musica_${Date.now()}.mp4`);
         
         // Converter URL da música para caminho do arquivo
         let musicPath = payload.musica;
-        if (musicPath.startsWith('/api/music/file/')) {      // Converter URL da API para caminho do arquivo
+        log(`🎵 URL original: ${musicPath}`);
+        
+        if (musicPath && musicPath.includes('/api/music/file/')) {
+          const idx = musicPath.indexOf('/api/music/file/');
+          musicPath = musicPath.substring(idx);
+          log(`🎵 URL após substring: ${musicPath}`);
+        }
+        
+        if (musicPath && musicPath.startsWith('/api/music/file/')) {      // Converter URL da API para caminho do arquivo
           const urlParts = musicPath.replace('/api/music/file/', '').split('/');
+          log(`🎵 URL parts: ${JSON.stringify(urlParts)}`);
           if (urlParts.length === 2) {
             const category = urlParts[0];
             const filename = decodeURIComponent(urlParts[1]);
-            musicPath = path.join(__dirname, '..', '..', 'assets', 'music', category, filename);
+            // Usar caminho correto do projeto
+            musicPath = path.join(process.cwd(), 'assets', 'music', category, filename);
             log(`🎵 Convertendo URL para caminho: ${musicPath}`);
           }
         }
@@ -1257,11 +1301,27 @@ Exemplo de resposta:
           log(`⚠️ Arquivo de música não encontrado: ${musicPath}`);
           log(`🔄 Tentando buscar na pasta assets/music...`);
           
-          // Tentar encontrar na pasta assets/music
-          const musicDir = path.join(__dirname, '..', '..', 'assets', 'music');
-          const musicFiles = fs.readdirSync(musicDir, { recursive: true })
-            .filter((file: string) => file.endsWith('.mp3') || file.endsWith('.wav'))
-            .map((file: string) => path.join(musicDir, file));
+          // Tentar encontrar na pasta assets/music (busca manual nas subpastas)
+          const musicDir = path.join(process.cwd(), 'assets', 'music');
+          const musicFiles: string[] = [];
+          
+          // Buscar em todas as subpastas manualmente
+          const categories = ['ambient', 'energetic', 'emotional', 'corporate', 'cinematografica'];
+          for (const category of categories) {
+            const categoryPath = path.join(musicDir, category);
+            if (fs.existsSync(categoryPath)) {
+              try {
+                const files = fs.readdirSync(categoryPath);
+                for (const file of files) {
+                  if (file.endsWith('.mp3') || file.endsWith('.wav')) {
+                    musicFiles.push(path.join(categoryPath, file));
+                  }
+                }
+              } catch (e) {
+                log(`⚠️ Erro ao ler pasta ${category}: ${e}`);
+              }
+            }
+          }
           
           if (musicFiles.length > 0) {
             const randomMusic = musicFiles[Math.floor(Math.random() * musicFiles.length)];
@@ -1275,6 +1335,9 @@ Exemplo de resposta:
         
         // Se temos um caminho válido de música, adicionar ao vídeo
         if (musicPath && fs.existsSync(musicPath)) {
+          log(`✅ Arquivo de música encontrado e válido: ${musicPath}`);
+          log(`✅ Tamanho do arquivo: ${fs.statSync(musicPath).size} bytes`);
+          
           // Usar configurações do frontend ou valores padrão
           const musicConfig = {
             volume: payload.configuracoes?.volumeMusica || 0.2,
@@ -1284,19 +1347,37 @@ Exemplo de resposta:
           };
           
           log(`🎵 Configurações de música: volume=${musicConfig.volume}, loop=${musicConfig.loop}, fadeIn=${musicConfig.fadeIn}, fadeOut=${musicConfig.fadeOut}`);
+          log(`🎵 Vídeo de entrada: ${videoFinal}`);
+          log(`🎵 Vídeo de saída: ${videoComMusicaPath}`);
           
-          addBackgroundMusic(
-            videoFinal,
-            musicPath,
-            videoComMusicaPath,
-            musicConfig
-          );
-          
-          videoComMusica = videoComMusicaPath;
-          arquivosTemporarios.push(videoComMusicaPath);
-          log(`✅ Música de fundo adicionada: ${videoComMusicaPath}`);
+          try {
+            addBackgroundMusic(
+              videoFinal,
+              musicPath,
+              videoComMusicaPath,
+              musicConfig
+            );
+            
+            // Verificar se o arquivo foi criado com sucesso
+            if (fs.existsSync(videoComMusicaPath) && fs.statSync(videoComMusicaPath).size > 0) {
+              log(`✅ Música de fundo adicionada com sucesso: ${videoComMusicaPath}`);
+              log(`✅ Tamanho do vídeo com música: ${fs.statSync(videoComMusicaPath).size} bytes`);
+              videoComMusica = videoComMusicaPath;
+              arquivosTemporarios.push(videoComMusicaPath);
+            } else {
+              log(`❌ Vídeo com música não foi criado corretamente`);
+              throw new Error('Vídeo com música não foi criado');
+            }
+          } catch (musicError) {
+            log(`❌ Erro ao adicionar música: ${musicError}`);
+            throw musicError;
+          }
         } else {
-          log(`⚠️ Música não encontrada, mantendo vídeo sem música de fundo`);
+          log(`❌ Música não encontrada ou arquivo inválido: ${musicPath}`);
+          log(`❌ Arquivo existe: ${fs.existsSync(musicPath || '')}`);
+          if (musicPath && fs.existsSync(musicPath)) {
+            log(`❌ Tamanho do arquivo: ${fs.statSync(musicPath).size} bytes`);
+          }
         }
       } catch (e) {
         log(`❌ Erro ao adicionar música de fundo: ${e}`);

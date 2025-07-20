@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { generateVideoVSL } from './src/orchestrators/orchestrator-vsl'; // ajuste o caminho se necessário
 import cors from 'cors';
+import { generateScript } from './src/text/gemini-groq'; // ajuste o caminho se necessário
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -13,7 +14,7 @@ const upload = multer({ dest: 'uploads/' });
 
 // Configurar CORS para aceitar requisições do frontend videos.babydiary.shop
 app.use(cors({
-  origin: 'https://videos.babydiary.shop',
+  origin: 'http://localhost:5173',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
@@ -40,6 +41,7 @@ interface GenerateVideoPayload {
   titulo?: string; // Novo campo para título do vídeo
   gerarLegenda?: boolean; // Novo campo para gerar legenda de redes sociais
   plataformaLegenda?: 'instagram' | 'facebook' | 'tiktok' | 'youtube'; // Novo campo para escolher plataforma
+  soGerarRoteiro?: boolean; // Novo campo para indicar se deve gerar apenas roteiro
 }
 
 // Função utilitária para log com timestamp
@@ -84,15 +86,182 @@ app.post('/api/generate-video', async (req, res) => {
   logServer('Recebendo requisição para gerar vídeo', req.body);
   const start = Date.now();
   try {
+    const payload = req.body;
+    // NOVO: Se for só para gerar roteiro/cenas, não inicia pipeline
+    if (payload.soGerarRoteiro) {
+      logServer('Flag soGerarRoteiro recebido. Gerando apenas roteiro/cenas, sem iniciar pipeline.');
+      const { generateWithFallback } = require('./src/text/gemini-groq');
+      const { getCredential } = require('./src/utils/credentials');
+      const apiKey = await getCredential('GEMINI_KEY');
+      let prompt = `Gere um roteiro VSL para vídeo sobre "${payload.tema}".\n\nREQUISITOS:\n- Crie um campo \"roteiro\" (ou \"script_audio\") com o texto completo, FLUIDO, HUMANO, direcionado diretamente ao público-alvo, SEM SSML, SEM blocos curtos, para ser usado na narração principal do vídeo (áudio ElevenLabs). O texto deve ser natural, envolvente, com tom adaptado ao público e ao tipo de vídeo.\n- No FINAL do campo \"roteiro\", inclua um call-to-action (CTA) natural e persuasivo, adaptando a mensagem ao público.\n- Crie um campo \"cenas\", que é um array de objetos, cada um com:\n  - \"narracao\": frase curta (pode usar SSML para emoção, pausa, ênfase) para servir de referência visual para a cena.\n  - \"visual\": array de 3 descrições detalhadas para imagens da cena (varie ângulo, foco, emoção, ação, iluminação, etc).\n- NÃO use blocos markdown (não coloque codigo json ou codigo no início/fim da resposta). Apenas retorne o JSON puro.\n- O campo \"roteiro\" será usado para gravar o áudio principal no ElevenLabs, então deve ser um texto contínuo, natural, sem SSML.\n\nIMPORTANTE: Se não retornar o campo 'roteiro', tente novamente e seja ainda mais explícito para garantir que o campo 'roteiro' venha preenchido como texto corrido, fluido, humano, para narração principal.`;
+      let resposta = await generateWithFallback(prompt, undefined, async (name) => name === 'GEMINI_KEY' ? apiKey : undefined);
+      logServer('🟢 RESPOSTA BRUTA DA IA:', resposta);
+      let roteiro = '';
+      let cenasArray = [];
+      let tentativas = 0;
+      while (tentativas < 2) {
+        try {
+          if (typeof resposta === 'string') {
+            const obj = JSON.parse(resposta);
+            if (obj && typeof obj === 'object' && 'roteiro' in obj) {
+              roteiro = obj.roteiro;
+              cenasArray = Array.isArray(obj.cenas) ? obj.cenas : [];
+              break;
+            } else if (Array.isArray(obj) && obj.every(item => item && typeof item.narracao === 'string')) {
+              cenasArray = obj;
+              roteiro = cenasArray.map(cena => (cena.narracao || '')).join(' ');
+              break;
+            } else if (Array.isArray(obj) && obj.every(item => item && Array.isArray(item.cenas))) {
+              cenasArray = obj.flatMap(item => item.cenas);
+              roteiro = cenasArray.map(cena => (cena.narracao || '')).join(' ');
+              break;
+            }
+          } else if (resposta && typeof resposta === 'object' && 'roteiro' in resposta) {
+            roteiro = resposta.roteiro;
+            cenasArray = Array.isArray(resposta.cenas) ? resposta.cenas : [];
+            break;
+          }
+        } catch (e) {
+          // Não é JSON, tenta fallback
+        }
+        tentativas++;
+        logServer('Roteiro não veio no formato esperado, tentando novamente com prompt mais explícito...');
+        prompt += '\n\nATENÇÃO: O campo "roteiro" é OBRIGATÓRIO. NÃO retorne apenas cenas. O campo "roteiro" deve ser um texto corrido, fluido, humano, para narração principal.';
+        resposta = await generateWithFallback(prompt, undefined, async (name) => name === 'GEMINI_KEY' ? apiKey : undefined);
+        logServer('🟡 NOVA RESPOSTA BRUTA DA IA:', resposta);
+      }
+      if (!roteiro && cenasArray.length > 0) {
+        roteiro = cenasArray.map(cena => (cena.narracao || '')).join(' ');
+        logServer('⚠️ Fallback: roteiro não veio da IA, usando concatenação das narrações das cenas.');
+      }
+      logServer(`✅ Roteiro final gerado (${roteiro.length} caracteres):`, roteiro);
+      logServer(`✅ Número de cenas: ${cenasArray.length}`);
+      logServer(`✅ Duração solicitada: ${payload.duracao || 0} segundos`);
+      res.status(200).json({ roteiro, cenas: cenasArray });
+      return;
+    }
+    // --- TRATAMENTO DE MÚSICA DE FUNDO ---
+    let musicaPath = payload.musica;
+    logServer('🎵 Valor recebido no campo musica:', musicaPath);
+    if (musicaPath && typeof musicaPath === 'string' && musicaPath.startsWith('http')) {
+      // Extrai o caminho relativo após /api/music/file/
+      const idx = musicaPath.indexOf('/api/music/file/');
+      if (idx !== -1) {
+        musicaPath = musicaPath.substring(idx + '/api/music/file/'.length);
+        logServer('🎵 Caminho relativo extraído da URL:', musicaPath);
+      }
+    }
+    // Caminho local absoluto
+    const localMusicPath = path.join(__dirname, 'assets', 'music', musicaPath || '');
+    logServer('🎵 Caminho local tentado para música:', localMusicPath);
+    if (!fs.existsSync(localMusicPath)) {
+      logServer('⚠️ Música NÃO encontrada no caminho:', localMusicPath);
+    } else {
+      logServer('✅ Música encontrada:', localMusicPath);
+    }
     // ... lógica de geração de vídeo ...
     logServer('Pipeline VSL iniciado');
-    const payload: GenerateVideoPayload = req.body;
+    logServer('Payload recebido para geração de vídeo:', req.body);
     const resultado = await generateVideoVSL(payload);
     logServer('Pipeline VSL finalizado com sucesso. Tempo:', (Date.now() - start) + 'ms');
+    logServer('Roteiro final usado para vídeo:', resultado?.metadados?.roteiro?.roteiro || resultado?.metadados?.roteiro || '');
     res.status(200).json(resultado);
   } catch (error) {
     logServer('Erro ao gerar vídeo:', error);
     res.status(500).json({ error: 'Erro ao processar pipeline', details: error });
+  }
+});
+
+// Geração de roteiro (novo endpoint)
+app.post('/api/generate-script', async (req, res) => {
+  try {
+    logServer('Recebendo requisição para gerar roteiro', req.body);
+    const { tema, tipo, publico, cenas, tom, formato, imagensComDescricao, titulo, gerarLegenda, plataformaLegenda, musica, configuracoes, cta } = req.body;
+
+    // Chame a função de geração de roteiro do seu orquestrador ou do gemini-groq
+    // Ajuste os parâmetros conforme sua função
+    const resposta = await generateScript(
+      tema,
+      undefined, // apiKey, se necessário
+      tipo,
+      30, // duração total, ajuste se quiser
+      publico,
+      cenas?.length || 5,
+      6 // duração por cena, ajuste se quiser
+    );
+    logServer('Resposta bruta da IA:', resposta);
+
+    let roteiro = '';
+    let cenasArray = [];
+    // Tratamento robusto para todos os formatos de resposta
+    if (Array.isArray(resposta) && resposta.every(item => item && Array.isArray(item.cenas))) {
+      // Array de objetos com campo cenas
+      cenasArray = resposta.flatMap(item => item.cenas);
+      roteiro = cenasArray.map((cena: any) =>
+        (cena.narracao || '')
+          .replace(/<speak>/gi, '')
+          .replace(/<\/speak>/gi, '')
+          .trim()
+      ).join(' ');
+      logServer('Roteiro principal criado a partir de array de objetos com cenas:', roteiro);
+    } else if (Array.isArray(resposta) && resposta.every(item => item && typeof item.narracao === 'string')) {
+      // Array simples de cenas
+      cenasArray = resposta;
+      roteiro = cenasArray.map((cena: any) =>
+        (cena.narracao || '')
+          .replace(/<speak>/gi, '')
+          .replace(/<\/speak>/gi, '')
+          .trim()
+      ).join(' ');
+      logServer('Roteiro principal criado a partir de array simples de cenas:', roteiro);
+    } else if (resposta && typeof resposta === 'object' && (resposta as any).roteiro !== undefined) {
+      roteiro = (resposta as any).roteiro;
+      cenasArray = Array.isArray((resposta as any).cenas) ? (resposta as any).cenas : [];
+      logServer('Roteiro principal extraído de objeto com campo roteiro:', roteiro);
+    } else if (resposta && typeof resposta === 'string') {
+      try {
+        const obj = JSON.parse(resposta);
+        if (Array.isArray(obj) && obj.every(item => item && Array.isArray(item.cenas))) {
+          // Array de objetos com campo cenas
+          cenasArray = obj.flatMap(item => item.cenas);
+          roteiro = cenasArray.map((cena: any) =>
+            (cena.narracao || '')
+              .replace(/<speak>/gi, '')
+              .replace(/<\/speak>/gi, '')
+              .trim()
+          ).join(' ');
+          logServer('Roteiro principal extraído de string JSON (array de objetos com cenas):', roteiro);
+        } else if (Array.isArray(obj) && obj.every(item => item && typeof item.narracao === 'string')) {
+          // Array simples de cenas
+          cenasArray = obj;
+          roteiro = cenasArray.map((cena: any) =>
+            (cena.narracao || '')
+              .replace(/<speak>/gi, '')
+              .replace(/<\/speak>/gi, '')
+              .trim()
+          ).join(' ');
+          logServer('Roteiro principal extraído de string JSON (array simples de cenas):', roteiro);
+        } else {
+          roteiro = obj.roteiro || '';
+          cenasArray = Array.isArray(obj.cenas) ? obj.cenas : [];
+          logServer('Roteiro principal extraído de string JSON (objeto):', roteiro);
+        }
+      } catch (e) {
+        roteiro = resposta;
+        cenasArray = [];
+        logServer('Roteiro principal extraído de string bruta:', roteiro);
+      }
+    }
+    // Fallback: se não vier roteiro, criar a partir das cenas
+    if ((!roteiro || roteiro.trim() === '') && cenasArray.length > 0) {
+      roteiro = cenasArray.map((cena: any) => cena.trecho || cena.narracao || '').join(' ');
+      logServer('Roteiro principal criado a partir das cenas (fallback):', roteiro);
+    }
+    logServer('Roteiro final retornado:', roteiro);
+    res.json({ roteiro, cenas: cenasArray });
+  } catch (error) {
+    console.error('Erro ao gerar roteiro:', error);
+    res.status(500).json({ error: 'Erro ao gerar roteiro' });
   }
 });
 
@@ -297,8 +466,10 @@ app.get('/api/credentials', async (req, res) => {
   }
 });
 
+// Rota para salvar credenciais no banco
 app.post('/api/credentials', async (req, res) => {
   try {
+    logServer('💾 Salvando credenciais no banco...');
     const { credentials } = req.body;
     const { PrismaClient } = require('@prisma/client');
     const prisma = new PrismaClient();
@@ -310,20 +481,30 @@ app.post('/api/credentials', async (req, res) => {
         create: { name: cred.name, value: cred.value }
       });
     }
-
+    
     // Limpar cache após salvar
-    try {
-      const { clearCredentialCache } = require('./src/utils/credentials');
-      clearCredentialCache();
-    } catch (e: any) {
-      console.warn('Não foi possível limpar o cache das credenciais:', e);
-    }
-
-    await prisma.$disconnect();
+    const { clearCredentialCache } = require('./src/utils/credentials');
+    clearCredentialCache();
+    
+    logServer('✅ Credenciais salvas com sucesso');
     res.json({ success: true, message: 'Credenciais salvas com sucesso' });
   } catch (error) {
-    console.error('Erro ao salvar credenciais:', error);
+    logServer('❌ Erro ao salvar credenciais:', error);
     res.status(500).json({ error: 'Erro ao salvar credenciais' });
+  }
+});
+
+// Rota para limpar cache de credenciais
+app.post('/api/credentials/clear-cache', async (req, res) => {
+  try {
+    logServer('🧹 Limpando cache de credenciais...');
+    const { clearCredentialCache } = require('./src/utils/credentials');
+    clearCredentialCache(); // Limpa todo o cache
+    logServer('✅ Cache de credenciais limpo com sucesso');
+    res.json({ success: true, message: 'Cache de credenciais limpo com sucesso' });
+  } catch (error) {
+    logServer('❌ Erro ao limpar cache de credenciais:', error);
+    res.status(500).json({ error: 'Erro ao limpar cache de credenciais' });
   }
 });
 

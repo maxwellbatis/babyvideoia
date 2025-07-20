@@ -307,11 +307,27 @@ export const ApiSettings: React.FC = () => {
 
       console.log('💾 Salvando credenciais:', credentials);
       await api.post('/credentials', { credentials });
-      showToast('Configurações salvas com sucesso!', 'success');
-      await loadCredentialsFromDatabase(); // Atualiza imediatamente após salvar
-    } catch (error: any) {
-      console.error('❌ Erro ao salvar:', error);
-      showToast(`Erro ao salvar: ${error.response?.data?.message || error.message}`, 'error');
+      
+      // Limpar cache após salvar
+      await clearCredentialsCache();
+      
+      showToast('Credenciais salvas com sucesso!', 'success');
+      
+      // Recarregar credenciais do banco
+      await loadCredentialsFromDatabase();
+    } catch (error) {
+      console.error('❌ Erro ao salvar credenciais:', error);
+      showToast('Erro ao salvar credenciais', 'error');
+    }
+  };
+
+  const clearCredentialsCache = async () => {
+    try {
+      await api.post('/credentials/clear-cache');
+      showToast('Cache de credenciais limpo!', 'success');
+    } catch (error) {
+      console.error('❌ Erro ao limpar cache:', error);
+      showToast('Erro ao limpar cache', 'error');
     }
   };
 
@@ -497,6 +513,15 @@ export const ApiSettings: React.FC = () => {
           size="lg"
         >
           💾 Salvar Configurações
+        </Button>
+        <Button
+          onClick={clearCredentialsCache}
+          icon={Key}
+          variant="outline"
+          className="flex-1"
+          size="lg"
+        >
+          🗑️ Limpar Cache
         </Button>
         </div>
       </div>
