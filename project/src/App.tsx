@@ -5,6 +5,7 @@ import { VideoGallery } from './components/VideoGallery';
 import { ChatIA } from './components/ChatIA';
 import { ApiStatus } from './components/ApiStatus';
 import { ApiSettings } from './components/ApiSettings';
+import { FreepikAlerts } from './components/FreepikAlerts';
 import { Toast, useToast } from './components/Toast';
 import { getVideos } from './services/api';
 
@@ -196,6 +197,9 @@ export default function App() {
           <div className="lg:col-span-1 space-y-6">
             {/* API Status */}
             <ApiStatus />
+
+            {/* Alertas Freepik */}
+            <FreepikAlerts />
 
             {/* Resumo de CTAs Populares */}
             {ctaStats.topCTAs.length > 0 && (

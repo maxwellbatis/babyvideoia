@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
 import { Card } from './ui/Card';
 import { getApiStatus, ApiStatus as ApiStatusType } from '../services/api';
 
@@ -199,6 +199,36 @@ export const ApiStatus: React.FC = () => {
           <span className="text-xs text-gray-500 ml-2">Limite: {status?.limits?.freepik ?? '-'}</span>
         </div>
         {renderApiProgress('freepik', 'Freepik')}
+        
+        {/* Alertas do Freepik */}
+        {status?.alerts?.freepik && status.alerts.freepik.length > 0 && (
+          <div className="mt-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
+            <div className="flex items-center space-x-2 mb-2">
+              <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+              <span className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                Alertas Freepik ({status.alerts.freepik.length})
+              </span>
+            </div>
+            <div className="space-y-2">
+              {status.alerts.freepik.map((alert: any, index: number) => (
+                <div key={index} className="text-xs text-yellow-700 dark:text-yellow-300">
+                  <div className="flex items-start space-x-2">
+                    <span className="flex-shrink-0">
+                      {alert.severity === 'critical' ? '🔴' : alert.severity === 'warning' ? '🟡' : '🔵'}
+                    </span>
+                    <span>{alert.message}</span>
+                  </div>
+                  <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                    {new Date(alert.timestamp).toLocaleString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 text-xs text-yellow-600 dark:text-yellow-400">
+              💡 Dica: Adicione uma nova chave Freepik para resolver os problemas
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">

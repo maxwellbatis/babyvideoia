@@ -184,14 +184,14 @@ export class GeneratedImageManager {
     imageNumber: number
   ): Promise<any | null> {
     try {
-      // 1. Busca exata (tudo igual)
+      // 1. Busca exata (tudo igual) - mais restritiva
       let similarImages = await this.findSimilarImages({
         sceneDescription,
         tema,
         tipo,
         publico,
         resolution,
-        limit: 10
+        limit: 5
       });
       if (similarImages.length > 0) {
         const matchingImages = similarImages.filter(img => img.imageNumber === imageNumber);
@@ -201,46 +201,53 @@ export class GeneratedImageManager {
             current.performance > best.performance ? current : best
           );
         }
-        // Se não achou exato, retorna a melhor geral desse filtro
-        console.log('🔍 Fallback: Imagem similar encontrada por filtro completo.');
-        return similarImages[0];
+        // Se não achou exato, NÃO retorna a primeira - deixa gerar nova
+        console.log('🔍 Fallback: Correspondência exata não encontrada, gerando nova imagem.');
+        return null;
       }
 
-      // 2. Busca por palavras-chave/tags
+      // 2. Busca por palavras-chave/tags - mais específica
       const tags = this.generateTags(sceneDescription, tema, tipo);
       similarImages = await this.findSimilarImages({
         tags,
         publico,
         resolution,
-        limit: 10
+        limit: 3
       });
       if (similarImages.length > 0) {
-        console.log('🔍 Fallback: Imagem encontrada por tags e público.');
-        return similarImages[0];
+        // Verificar se não é a mesma imagem que já foi usada
+        const uniqueImages = similarImages.filter((img, index, self) => 
+          index === self.findIndex(t => t.id === img.id)
+        );
+        if (uniqueImages.length > 0) {
+          console.log('🔍 Fallback: Imagem única encontrada por tags e público.');
+          return uniqueImages[0];
+        }
       }
 
-      // 3. Busca por público
+      // 3. Busca por público - mais restritiva
       similarImages = await this.findSimilarImages({
         publico,
         resolution,
-        limit: 10
+        limit: 2
       });
       if (similarImages.length > 0) {
         console.log('🔍 Fallback: Imagem encontrada apenas por público.');
         return similarImages[0];
       }
 
-      // 4. Qualquer imagem
-      similarImages = await this.findSimilarImages({
-        resolution,
-        limit: 1
-      });
-      if (similarImages.length > 0) {
-        console.log('🔍 Fallback: Usando qualquer imagem do banco.');
-        return similarImages[0];
-      }
+      // 4. Qualquer imagem - desabilitado para evitar repetições
+      // similarImages = await this.findSimilarImages({
+      //   resolution,
+      //   limit: 1
+      // });
+      // if (similarImages.length > 0) {
+      //   console.log('🔍 Fallback: Usando qualquer imagem do banco.');
+      //   return similarImages[0];
+      // }
 
-      // Nada encontrado
+      // Nada encontrado - melhor gerar nova imagem
+      console.log('🔍 Fallback: Nenhuma imagem adequada encontrada, gerando nova.');
       return null;
     } catch (error) {
       console.error('Erro ao buscar melhor imagem para cena:', error);

@@ -2,7 +2,7 @@ import { getCredential } from '../utils/credentials';
 import { videoMetadataManager } from '../utils/videoMetadata';
 import { GeneratedImageManager } from '../utils/generatedImageManager';
 import { generateSceneImageSuggestions } from '../utils/sceneImageGenerator';
-import { log } from '../utils/logger';
+import { log, logPerf, logApi } from '../utils/logger';
 import { generateWithFallback } from '../text/gemini-groq';
 import { gerarImagemColabSD } from '../image/stabledefusion';
 import { generateImageFreepik } from '../image/freepik';
@@ -15,6 +15,11 @@ import { generateProgressiveSubtitlesWithAudio } from '../subtitles/aligner';
 import { generateScript } from '../text/gemini-groq';
 import JSON5 from 'json5'; // Adicionar no topo do arquivo
 import axios from 'axios';
+import { fileManager } from '../utils/fileManager';
+import { imageCache } from '../utils/imageCache';
+import { getConfig, isOptimizationEnabled } from '../config/performance';
+import { canUseFreepik, getFreepikStats } from '../utils/freepikUsage';
+import { performanceMonitor, measureApiPerformance } from '../utils/performanceMonitor';
 
 // Função utilitária para gerar CTA visual personalizado
 function gerarCTAPersonalizado(tema: string, tipo: string, publico: string): string {
@@ -339,23 +344,114 @@ function criarPlaceholderValido(outputPath: string, largura: number = 720, altur
     const fs = require('fs');
     const buffer = canvas.toBuffer('image/png');
     fs.writeFileSync(outputPath, buffer);
+    
+    // Verificar se o arquivo foi criado corretamente
+    if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size === 0) {
+      throw new Error('Arquivo placeholder não foi criado corretamente');
+    }
+    
+    log(`✅ Placeholder criado com sucesso: ${outputPath} (${fs.statSync(outputPath).size} bytes)`);
   } catch (e) {
-    // Fallback simples se canvas não estiver disponível
+    log(`❌ Erro ao criar placeholder com canvas: ${e}`);
+    
+    // Fallback melhorado: copiar uma imagem de placeholder existente
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Tentar copiar uma imagem de placeholder existente
+      const placeholderDir = path.join(process.cwd(), 'assets', 'templates');
+      const placeholderFiles = ['placeholder.png', 'default.png', 'template.png'];
+      
+      for (const file of placeholderFiles) {
+        const placeholderPath = path.join(placeholderDir, file);
+        if (fs.existsSync(placeholderPath)) {
+          fs.copyFileSync(placeholderPath, outputPath);
+          log(`✅ Placeholder copiado de: ${placeholderPath}`);
+          return;
+        }
+      }
+      
+      // Se não encontrar placeholder existente, criar um PNG válido simples
+      log(`⚠️ Criando PNG válido simples como fallback...`);
+      
+      // Criar um PNG válido com fundo sólido
+      const { createCanvas } = require('canvas');
+      const canvas = createCanvas(largura, altura);
+      const ctx = canvas.getContext('2d');
+      
+      // Fundo azul simples
+      ctx.fillStyle = '#4A90E2';
+      ctx.fillRect(0, 0, largura, altura);
+      
+      // Texto simples
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 24px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('BabyVideoIA', largura / 2, altura / 2);
+      
+      const buffer = canvas.toBuffer('image/png');
+      fs.writeFileSync(outputPath, buffer);
+      
+      log(`✅ PNG válido criado como fallback: ${outputPath}`);
+    } catch (fallbackError) {
+      log(`❌ Erro no fallback: ${fallbackError}`);
+      
+      // Último recurso: criar um arquivo de imagem mínima
+      const fs = require('fs');
+      const minimalPng = Buffer.from([
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+        0x00, 0x00, 0x00, 0x0D, // IHDR chunk length
+        0x49, 0x48, 0x44, 0x52, // IHDR
+        0x00, 0x00, 0x02, 0xD0, // width: 720
+        0x00, 0x00, 0x05, 0x00, // height: 1280
+        0x08, 0x06, 0x00, 0x00, 0x00, // bit depth, color type, etc.
+        0x00, 0x00, 0x00, 0x00, // CRC placeholder
+        0x00, 0x00, 0x00, 0x00, // IEND chunk length
+        0x49, 0x45, 0x4E, 0x44, // IEND
+        0xAE, 0x42, 0x60, 0x82  // CRC
+      ]);
+      fs.writeFileSync(outputPath, minimalPng);
+      log(`⚠️ PNG mínimo criado como último recurso: ${outputPath}`);
+    }
+  }
+}
+
+// Função para verificar se uma imagem é válida
+function verificarImagemValida(imagePath: string): boolean {
+  try {
     const fs = require('fs');
-    // Criar um arquivo PNG mínimo válido com dimensões corretas
-    const pngHeader = Buffer.from([
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-      0x00, 0x00, 0x00, 0x0D, // IHDR chunk length
-      0x49, 0x48, 0x44, 0x52, // IHDR
-      (largura >> 24) & 0xFF, (largura >> 16) & 0xFF, (largura >> 8) & 0xFF, largura & 0xFF, // width
-      (altura >> 24) & 0xFF, (altura >> 16) & 0xFF, (altura >> 8) & 0xFF, altura & 0xFF, // height
-      0x08, 0x02, 0x00, 0x00, 0x00, // bit depth, color type, etc.
-      0x00, 0x00, 0x00, 0x00, // CRC placeholder
-      0x00, 0x00, 0x00, 0x00, // IEND chunk length
-      0x49, 0x45, 0x4E, 0x44, // IEND
-      0xAE, 0x42, 0x60, 0x82  // CRC
-    ]);
-    fs.writeFileSync(outputPath, pngHeader);
+    if (!fs.existsSync(imagePath)) {
+      log(`❌ Imagem não existe: ${imagePath}`);
+      return false;
+    }
+    
+    const stats = fs.statSync(imagePath);
+    if (stats.size === 0) {
+      log(`❌ Imagem vazia: ${imagePath}`);
+      return false;
+    }
+    
+    // Verificar se é um PNG válido (verificar assinatura)
+    const buffer = fs.readFileSync(imagePath);
+    if (buffer.length < 8) {
+      log(`❌ Imagem muito pequena: ${imagePath}`);
+      return false;
+    }
+    
+    // Verificar assinatura PNG
+    const pngSignature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+    if (!buffer.slice(0, 8).equals(pngSignature)) {
+      log(`❌ Imagem não é PNG válido: ${imagePath}`);
+      return false;
+    }
+    
+    log(`✅ Imagem válida: ${imagePath} (${stats.size} bytes)`);
+    return true;
+  } catch (error) {
+    log(`❌ Erro ao verificar imagem: ${error}`);
+    return false;
   }
 }
 
@@ -369,41 +465,54 @@ async function gerarImagemComFallbackMelhorado(
   
   log(`🎯 INÍCIO: Gerando imagem ${numeroImagem} da cena ${numeroCena} com prompt: "${prompt}"`);
   
-  // 1. PRIMEIRO: Tentar Freepik (rápido)
-  try {
-    log(`🎨 ETAPA 1: Tentando Freepik para imagem ${numeroImagem} da cena ${numeroCena}...`);
-    // Usar o prompt diretamente, o Freepik já tem sua própria lógica de melhoria
-    const imgPath = await generateImageFreepik(prompt, outputPath, { resolution: 'vertical' });
-    log(`✅ SUCESSO: Imagem ${numeroImagem} gerada com Freepik: ${imgPath}`);
-    // Persistir imagem gerada
+  // 1. PRIMEIRO: Verificar se Freepik pode ser usado (modo ilimitado)
+  const freepikStatus = canUseFreepik();
+  if (freepikStatus.canUse) {
     try {
-      const { GeneratedImageManager } = require('../utils/generatedImageManager');
-      const fs = require('fs');
-      const tags = GeneratedImageManager.generateTags(prompt, payload.tema, payload.tipo);
-      const stats = fs.existsSync(imgPath) ? fs.statSync(imgPath) : { size: 0 };
-      await GeneratedImageManager.saveGeneratedImage({
-        filename: imgPath.split('/').pop() || imgPath,
-        prompt: prompt,
-        sceneDescription: prompt,
-        sceneNumber: numeroCena,
-        imageNumber: numeroImagem,
-        generationMethod: 'freepik',
-        resolution: '576x1024',
-        tema: payload.tema,
-        tipo: payload.tipo,
-        publico: payload.publico,
-        tags,
-        localPath: imgPath,
-        size: stats.size || 0
-      });
-      log(`💾 Imagem Freepik persistida no banco/Cloudinary.`);
-    } catch (err) {
-      log(`⚠️ Falha ao persistir imagem Freepik: ${err}`);
+      log(`🎨 ETAPA 1: Tentando Freepik para imagem ${numeroImagem} da cena ${numeroCena}...`);
+      log(`📊 Status Freepik: ${JSON.stringify(freepikStatus.usage)}`);
+      
+      // Usar o prompt diretamente, o Freepik já tem sua própria lógica de melhoria
+      const imgPath = await generateImageFreepik(prompt, outputPath, { resolution: 'vertical' });
+      log(`✅ SUCESSO: Imagem ${numeroImagem} gerada com Freepik: ${imgPath}`);
+      
+      // Persistir imagem gerada
+      try {
+        const { GeneratedImageManager } = require('../utils/generatedImageManager');
+        const fs = require('fs');
+        const tags = GeneratedImageManager.generateTags(prompt, payload.tema, payload.tipo);
+        const stats = fs.existsSync(imgPath) ? fs.statSync(imgPath) : { size: 0 };
+        await GeneratedImageManager.saveGeneratedImage({
+          filename: imgPath.split('/').pop() || imgPath,
+          prompt: prompt,
+          sceneDescription: prompt,
+          sceneNumber: numeroCena,
+          imageNumber: numeroImagem,
+          generationMethod: 'freepik',
+          resolution: '576x1024',
+          tema: payload.tema,
+          tipo: payload.tipo,
+          publico: payload.publico,
+          tags,
+          localPath: imgPath,
+          size: stats.size || 0
+        });
+        log(`💾 Imagem Freepik persistida no banco/Cloudinary.`);
+      } catch (err) {
+        log(`⚠️ Falha ao persistir imagem Freepik: ${err}`);
+      }
+      log(`🎯 FIM: Retornando imagem Freepik gerada: ${imgPath}`);
+      return imgPath;
+    } catch (e) {
+      log(`❌ FALHA: Freepik falhou para imagem ${numeroImagem}: ${e}`);
+      // Se falhar por rate limit ou chave inválida, sugerir adicionar nova chave
+      if (e.message && (e.message.includes('rate limit') || e.message.includes('401') || e.message.includes('invalid'))) {
+        log(`💡 DICA: Considere adicionar uma nova chave Freepik se o erro persistir`);
+      }
     }
-    log(`🎯 FIM: Retornando imagem Freepik gerada: ${imgPath}`);
-    return imgPath;
-  } catch (e) {
-    log(`❌ FALHA: Freepik falhou para imagem ${numeroImagem}: ${e}`);
+  } else {
+    log(`⚠️ Freepik não disponível: ${freepikStatus.reason}`);
+    log(`📊 Estatísticas Freepik: ${JSON.stringify(freepikStatus.usage)}`);
   }
   
   // 2. SEGUNDO: Tentar Stable Diffusion (se configurado)
@@ -521,6 +630,7 @@ async function gerarImagemComFallbackMelhorado(
     log(`❌ FALHA: Erro ao criar placeholder: ${e}`);
     // Último recurso: retornar caminho de placeholder básico
     const fallbackPath = `output/generated_images/placeholder_basic_scene${numeroCena}_img${numeroImagem}.png`;
+    criarPlaceholderValido(fallbackPath, 720, 1280);
     log(`🎯 FIM: Retornando placeholder básico: ${fallbackPath}`);
     return fallbackPath;
   }
@@ -543,8 +653,30 @@ async function processarImagensCenaSequencial(
   for (let i = 0; i < 3; i++) {
     const prompt = promptsVisuais[i];
     log(`📸 Gerando imagem ${i + 1}/3 para cena ${numeroCena} com descrição: ${prompt}`);
+    
+
+    
     const imagem = await gerarImagemComFallbackMelhorado(prompt, payload, numeroCena, i + 1);
-    imagens.push(imagem);
+    
+    // Verificar se a imagem foi gerada corretamente
+    if (!imagem || !fs.existsSync(imagem)) {
+      log(`❌ Imagem ${i + 1} não foi gerada corretamente, tentando novamente...`);
+      // Tentar uma vez mais
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      const imagemRetry = await gerarImagemComFallbackMelhorado(prompt, payload, numeroCena, i + 1);
+      if (imagemRetry && fs.existsSync(imagemRetry)) {
+        imagens.push(imagemRetry);
+        log(`✅ Imagem ${i + 1} gerada na segunda tentativa: ${imagemRetry}`);
+      } else {
+        log(`❌ Falha na segunda tentativa, usando placeholder...`);
+        const placeholderPath = `output/generated_images/placeholder_scene${numeroCena}_img${i + 1}.png`;
+        criarPlaceholderValido(placeholderPath, 720, 1280);
+        imagens.push(placeholderPath);
+      }
+    } else {
+      imagens.push(imagem);
+      log(`✅ Imagem ${i + 1} gerada com sucesso: ${imagem}`);
+    }
     
     // Adicionar imagem ao array de arquivos temporários se fornecido
     if (arquivosTemporarios && imagem) {
@@ -553,8 +685,8 @@ async function processarImagensCenaSequencial(
     }
     
     if (i < 2) {
-      log(`⏳ Aguardando 5 segundos antes da próxima imagem...`);
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      log(`⏳ Aguardando 10 segundos antes da próxima imagem para evitar rate limit...`);
+      await new Promise(resolve => setTimeout(resolve, 10000));
     }
   }
   log(`✅ Todas as 3 imagens da cena ${numeroCena} foram processadas!`);
@@ -650,6 +782,12 @@ function sugerirCTAAutomatico(publico: string): string {
 
 // Função principal do pipeline VSL otimizada
 export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<VideoResult> {
+  const pipelineId = performanceMonitor.start('generateVideoVSL', { 
+    tema: payload.tema, 
+    tipo: payload.tipo, 
+    publico: payload.publico 
+  });
+  
   const arquivosTemporarios: string[] = [];
   
   try {
@@ -1003,48 +1141,181 @@ export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<V
       }
     }
 
-    // 4. Gerar imagens para todas as cenas (corrigido)
-    log('🎨 Iniciando geração de imagens...');
+    // 4. Gerar imagens para todas as cenas (OTIMIZADO)
+    const imageGenerationId = performanceMonitor.start('imageGeneration');
+    const startTime = Date.now();
+    log('🎨 Iniciando geração de imagens (OTIMIZADO)...');
+    
     const imagensPorCena: string[][] = [];
     const imagensComDescricao = Array.isArray(payload.imagensComDescricao) ? payload.imagensComDescricao : [];
     const useSD = payload.useStableDiffusion || process.env.USE_STABLE_DIFFUSION === 'true' || process.env.COLAB_URL;
+    
+    const config = getConfig();
+    const useParallel = isOptimizationEnabled('enableParallelProcessing');
+    
+    // Verificar status do Freepik antes de começar
+    const freepikStats = getFreepikStats();
+    log(`📊 Status Freepik: ${JSON.stringify(freepikStats)}`);
+    
     if (!useSD) {
-      // Freepik: gerar imagens de forma sequencial para evitar sobrecarga
-      for (let i = 0; i < roteiroIA.cenas.length; i++) {
-        let imagensCena: string[] = [];
-        const cena = roteiroIA.cenas[i];
-        const visuais = Array.isArray(cena.visual) ? cena.visual : [cena.visual];
-        // 1ª imagem: gerada pela IA
-        const img1 = await gerarImagemComFallbackMelhorado(visuais[0], payload, i + 1, 1);
-        imagensCena.push(img1);
-        // 2ª imagem: enviada pelo usuário (se houver)
-        if (imagensComDescricao.length > 0) {
-          const idxUserImg = i % imagensComDescricao.length;
-          let imgUrl = imagensComDescricao[idxUserImg].url;
-          if (imgUrl.startsWith('http')) {
-            const ext = path.extname(imgUrl).split('?')[0] || '.png';
-            const localPath = `output/generated_images/user_img_${i + 1}${ext}`;
-            await baixarImagemParaLocal(imgUrl, localPath);
-            imagensCena.push(localPath);
-          } else {
-            imagensCena.push(imgUrl);
+      if (useParallel && roteiroIA.cenas.length > 1) {
+        // Processamento paralelo de cenas com controle de concorrência
+        log(`🚀 Processamento PARALELO: ${roteiroIA.cenas.length} cenas`);
+        
+        // Limitar concorrência para não sobrecarregar APIs
+        const maxConcurrent = Math.min(config.maxConcurrentScenes, roteiroIA.cenas.length);
+        log(`⚙️ Concorrência máxima: ${maxConcurrent} cenas simultâneas`);
+        
+        // Processar cenas em lotes para controlar concorrência
+        const processSceneBatch = async (sceneBatch: any[], batchIndex: number) => {
+          log(`📦 Processando lote ${batchIndex + 1} com ${sceneBatch.length} cenas...`);
+          
+          const batchPromises = sceneBatch.map(async (cena, i) => {
+            const sceneIndex = batchIndex * maxConcurrent + i;
+            log(`🎨 Iniciando cena ${sceneIndex + 1}/${roteiroIA.cenas.length}...`);
+            
+            try {
+              let imagensCena: string[] = [];
+              const visuais = Array.isArray(cena.visual) ? cena.visual : [cena.visual];
+              
+              // Processar imagens da cena em paralelo com cache
+              const imagePromises = visuais.map(async (visual, imgIndex) => {
+                // Verificar cache primeiro
+                if (isOptimizationEnabled('enableImageCache')) {
+                  const cachedImage = imageCache.get(visual, { cena: sceneIndex + 1, imagem: imgIndex + 1 });
+                  if (cachedImage) {
+                    log(`🎯 Cache hit para imagem ${imgIndex + 1} da cena ${sceneIndex + 1}`);
+                    return cachedImage;
+                  }
+                }
+                
+                // Gerar nova imagem
+                const imagePath = await gerarImagemComFallbackMelhorado(visual, payload, sceneIndex + 1, imgIndex + 1);
+                
+                // Adicionar ao cache
+                if (isOptimizationEnabled('enableImageCache') && imagePath) {
+                  imageCache.set(visual, imagePath, { cena: sceneIndex + 1, imagem: imgIndex + 1 });
+                }
+                
+                return imagePath;
+              });
+              
+              imagensCena = await Promise.all(imagePromises);
+              
+              // Adicionar imagens do usuário se disponíveis
+              if (imagensComDescricao.length > 0 && imagensCena.length >= 2) {
+                const idxUserImg = sceneIndex % imagensComDescricao.length;
+                let imgUrl = imagensComDescricao[idxUserImg].url;
+                if (imgUrl.startsWith('http')) {
+                  const ext = path.extname(imgUrl).split('?')[0] || '.png';
+                  const localPath = fileManager.createTempFile(ext, `user_img_${sceneIndex + 1}`);
+                  await baixarImagemParaLocal(imgUrl, localPath);
+                  imagensCena[1] = localPath; // Substituir segunda imagem
+                } else {
+                  imagensCena[1] = imgUrl;
+                }
+              }
+              
+              return { index: sceneIndex, imagens: imagensCena };
+            } catch (error) {
+              log(`❌ Erro na cena ${sceneIndex + 1}: ${error}`);
+              // Retornar placeholders em caso de erro
+              const placeholders = Array(3).fill(null).map((_, j) => {
+                const placeholderPath = fileManager.createTempFile('.png', `placeholder_error_${sceneIndex + 1}_${j + 1}`);
+                criarPlaceholderValido(placeholderPath);
+                return placeholderPath;
+              });
+              return { index: sceneIndex, imagens: placeholders };
+            }
+          });
+          
+          const batchResults = await Promise.all(batchPromises);
+          
+          // Pequeno delay entre lotes para não sobrecarregar APIs
+          if (batchIndex < Math.ceil(roteiroIA.cenas.length / maxConcurrent) - 1) {
+            log(`⏳ Aguardando 2 segundos entre lotes...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
           }
-        } else {
-          const img2 = await gerarImagemComFallbackMelhorado(visuais[1], payload, i + 1, 2);
-          imagensCena.push(img2);
+          
+          return batchResults;
+        };
+        
+        // Dividir cenas em lotes
+        const sceneBatches = [];
+        for (let i = 0; i < roteiroIA.cenas.length; i += maxConcurrent) {
+          sceneBatches.push(roteiroIA.cenas.slice(i, i + maxConcurrent));
         }
-        // 3ª imagem: gerada pela IA
-        const img3 = await gerarImagemComFallbackMelhorado(visuais[2], payload, i + 1, 3);
-        imagensCena.push(img3);
-
-        imagensPorCena.push(imagensCena);
-
-        // Pequeno delay para não sobrecarregar a Freepik
-        if (i < roteiroIA.cenas.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1200)); // 1,2 segundos
+        
+        // Processar lotes sequencialmente
+        const allResults = [];
+        for (let i = 0; i < sceneBatches.length; i++) {
+          const batchResults = await processSceneBatch(sceneBatches[i], i);
+          allResults.push(...batchResults);
+        }
+        
+        // Ordenar resultados por índice
+        allResults.sort((a, b) => a.index - b.index);
+        imagensPorCena.push(...allResults.map(r => r.imagens));
+        
+        log(`✅ Processamento paralelo concluído: ${allResults.length} cenas processadas`);
+      } else {
+        // Processamento sequencial otimizado
+        log(`🐌 Processamento SEQUENCIAL: ${roteiroIA.cenas.length} cenas`);
+        for (let i = 0; i < roteiroIA.cenas.length; i++) {
+          let imagensCena: string[] = [];
+          const cena = roteiroIA.cenas[i];
+          const visuais = Array.isArray(cena.visual) ? cena.visual : [cena.visual];
+          
+          // Processar imagens da cena em paralelo
+          const imagePromises = visuais.map(async (visual, imgIndex) => {
+            // Verificar cache primeiro
+            if (isOptimizationEnabled('enableImageCache')) {
+              const cachedImage = imageCache.get(visual, { cena: i + 1, imagem: imgIndex + 1 });
+              if (cachedImage) {
+                log(`🎯 Cache hit para imagem ${imgIndex + 1} da cena ${i + 1}`);
+                return cachedImage;
+              }
+            }
+            
+            // Gerar nova imagem
+            const imagePath = await gerarImagemComFallbackMelhorado(visual, payload, i + 1, imgIndex + 1);
+            
+            // Adicionar ao cache
+            if (isOptimizationEnabled('enableImageCache') && imagePath) {
+              imageCache.set(visual, imagePath, { cena: i + 1, imagem: imgIndex + 1 });
+            }
+            
+            return imagePath;
+          });
+          
+          imagensCena = await Promise.all(imagePromises);
+          
+          // Adicionar imagens do usuário se disponíveis
+          if (imagensComDescricao.length > 0 && imagensCena.length >= 2) {
+            const idxUserImg = i % imagensComDescricao.length;
+            let imgUrl = imagensComDescricao[idxUserImg].url;
+            if (imgUrl.startsWith('http')) {
+              const ext = path.extname(imgUrl).split('?')[0] || '.png';
+              const localPath = fileManager.createTempFile(ext, `user_img_${i + 1}`);
+              await baixarImagemParaLocal(imgUrl, localPath);
+              imagensCena[1] = localPath; // Substituir segunda imagem
+            } else {
+              imagensCena[1] = imgUrl;
+            }
+          }
+          
+          imagensPorCena.push(imagensCena);
+          
+          // Pequeno delay para não sobrecarregar a Freepik (mesmo sem limites)
+          if (i < roteiroIA.cenas.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1200)); // 1,2 segundos
+          }
         }
       }
-      log('✅ Todas as imagens Freepik foram geradas de forma sequencial!');
+      log('✅ Todas as imagens foram geradas com sucesso!');
+      
+      performanceMonitor.end(imageGenerationId, true);
+      logPerf('Geração de imagens', startTime);
     } else {
       // Stable Diffusion: manter sequencial e delays
       for (let i = 0; i < roteiroIA.cenas.length; i++) {
@@ -1085,6 +1356,7 @@ export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<V
     }
 
     // 5. Gerar narração ElevenLabs
+    const ttsId = performanceMonitor.start('textToSpeech');
     log('🎤 Gerando narração ElevenLabs...');
     // Usar texto limpo sem SSML para narração natural
     const narracaoCompleta = roteiroIA.roteiro;
@@ -1121,6 +1393,8 @@ export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<V
         });
       }
     }
+
+    performanceMonitor.end(ttsId, true);
 
     // 6. Sincronizar áudio e imagens
     const duracaoAudio = await verificarDuracaoAudio(audioPath);
@@ -1464,8 +1738,16 @@ export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<V
     log(`✅ Vídeo salvo com ID: ${videoId}`);
 
     // 13. Limpar arquivos temporários
+    const cleanupId = performanceMonitor.start('cleanup');
     limparArquivosTemporarios(arquivosTemporarios);
+    performanceMonitor.end(cleanupId, true);
 
+    // Gerar relatório final de performance
+    const report = performanceMonitor.generateReport();
+    log(`📊 Relatório de Performance:\n${report}`);
+
+    performanceMonitor.end(pipelineId, true);
+    
     return {
       videoPath: videoFinalLegendado,
       thumbnailPath: thumbnailPath,
@@ -1478,9 +1760,10 @@ export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<V
         videoParts,
         cloudinaryVideoUrl,
         cloudinaryThumbnailUrl,
-        titulo: tituloFinal, // Novo campo
-        legendaRedesSociais: legendaRedesSociais, // Novo campo
-        plataformaLegenda: payload.plataformaLegenda // Novo campo
+        titulo: tituloFinal,
+        legendaRedesSociais: legendaRedesSociais,
+        plataformaLegenda: payload.plataformaLegenda,
+        performanceReport: report
       }
     };
     
@@ -1489,7 +1772,11 @@ export async function generateVideoVSL(payload: GenerateVideoPayload): Promise<V
     console.error('[VSL] Erro detalhado:', error);
     
     // Limpar arquivos temporários mesmo em caso de erro
+    const cleanupId = performanceMonitor.start('cleanup');
     limparArquivosTemporarios(arquivosTemporarios);
+    performanceMonitor.end(cleanupId, true);
+    
+    performanceMonitor.end(pipelineId, false, error.message);
     
     throw error;
   }
@@ -1572,4 +1859,48 @@ function corrigirJsonMalformado(jsonString: string): string {
   jsonString = jsonString.replace(/,\s*([}\]])/g, '$1');
 
   return jsonString;
+}
+
+async function processarImagensCenaParalelo(
+  cenaRoteiro: { trecho?: string; narracao?: string; visual: string | string[] },
+  payload: GenerateVideoPayload,
+  numeroCena: number,
+  arquivosTemporarios?: string[]
+): Promise<string[]> {
+  // Garantir que visual é um array de 3 descrições
+  const promptsVisuais = Array.isArray(cenaRoteiro.visual) ? cenaRoteiro.visual : [cenaRoteiro.visual];
+  if (promptsVisuais.length !== 3) {
+    throw new Error(`A cena ${numeroCena} não possui exatamente 3 descrições visuais no roteiro IA. Foram encontradas: ${promptsVisuais.length}. Corrija o template do roteiro ou a IA.`);
+  }
+  
+  log(`🚀 Iniciando geração PARALELA de 3 imagens para cena ${numeroCena}...`);
+  
+  // Criar array de promises para processamento paralelo
+  const promises = promptsVisuais.map(async (prompt, index) => {
+    log(`📸 Iniciando geração da imagem ${index + 1}/3 para cena ${numeroCena}`);
+    try {
+      const imagem = await gerarImagemComFallbackMelhorado(prompt, payload, numeroCena, index + 1);
+      
+      // Adicionar imagem ao array de arquivos temporários se fornecido
+      if (arquivosTemporarios && imagem) {
+        arquivosTemporarios.push(imagem);
+        log(`📝 Imagem ${index + 1} adicionada à lista de limpeza: ${imagem}`);
+      }
+      
+      return imagem;
+    } catch (error) {
+      log(`❌ Erro ao gerar imagem ${index + 1}: ${error}`);
+      // Retornar placeholder em caso de erro
+      const placeholderPath = `output/generated_images/placeholder_error_${numeroCena}_${index + 1}.png`;
+      criarPlaceholderValido(placeholderPath);
+      if (arquivosTemporarios) arquivosTemporarios.push(placeholderPath);
+      return placeholderPath;
+    }
+  });
+  
+  // Executar todas as promises em paralelo
+  const imagens = await Promise.all(promises);
+  
+  log(`✅ Todas as 3 imagens da cena ${numeroCena} foram processadas em paralelo!`);
+  return imagens;
 }

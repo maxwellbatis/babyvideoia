@@ -1,0 +1,30 @@
+[
+  {
+    "type": "usage",
+    "message": "Uso diário alto detectado: 187 requisições. Considere adicionar uma nova chave Freepik para melhor distribuição.",
+    "timestamp": "2025-07-20T22:55:17.520Z",
+    "severity": "warning",
+    "resolved": true
+  },
+  {
+    "type": "error",
+    "message": "Chave API Freepik inválida detectada. Adicione uma nova chave.",
+    "timestamp": "2025-07-20T22:55:17.520Z",
+    "severity": "critical",
+    "resolved": false
+  },
+  {
+    "type": "rate_limit",
+    "message": "Rate limit atingido na API Freepik. Adicione uma nova chave ou aguarde.",
+    "timestamp": "2025-07-20T22:55:17.520Z",
+    "severity": "warning",
+    "resolved": false
+  },
+  {
+    "type": "usage",
+    "message": "Uso diário alto detectado: 188 requisições. Considere adicionar uma nova chave Freepik para melhor distribuição.",
+    "timestamp": "2025-07-20T22:56:49.753Z",
+    "severity": "warning",
+    "resolved": false
+  }
+]

@@ -78,8 +78,19 @@ export function createKenBurnsAnimation(
     height = 1;
   }
 
-  // Remover qualquer animação: apenas scale+pad
-  const filterChain = `scale=${res.scale}:force_original_aspect_ratio=decrease,pad=${res.width}:${res.height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  // Verificar se a imagem é válida
+  try {
+    const stats = fs.statSync(inputImage);
+    if (stats.size === 0) {
+      throw new Error(`Imagem vazia: ${inputImage}`);
+    }
+  } catch (error) {
+    throw new Error(`Erro ao verificar imagem: ${error}`);
+  }
+
+  // Comando FFmpeg melhorado para evitar imagens pretas
+  // Usar scale sem force_original_aspect_ratio para manter proporções
+  const filterChain = `scale=${res.width}:${res.height}:force_original_aspect_ratio=increase,crop=${res.width}:${res.height}`;
 
   const command = `ffmpeg -y -loop 1 -i "${inputImage}" -vf "${filterChain}" -c:v libx264 -t ${duration} -pix_fmt yuv420p -an "${outputVideo}"`;
 
@@ -209,8 +220,8 @@ export function concatenateVideos(
 ): void {
   const res = getVideoResolution(resolution);
   
-  // CORREÇÃO: Usar force_original_aspect_ratio=decrease e pad para evitar distorção
-  const filterChain = `scale=${res.scale}:force_original_aspect_ratio=decrease,pad=${res.width}:${res.height}:(ow-iw)/2:(oh-ih)/2:color=black`;
+  // CORREÇÃO: Usar scale com crop para evitar imagens pretas
+  const filterChain = `scale=${res.width}:${res.height}:force_original_aspect_ratio=increase,crop=${res.width}:${res.height}`;
   
   const command = `ffmpeg -y -f concat -safe 0 -i "${inputList}" -c:v libx264 -c:a aac -pix_fmt yuv420p -vf "${filterChain}" "${outputVideo}"`;
   

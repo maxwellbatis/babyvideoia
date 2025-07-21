@@ -74,26 +74,29 @@ function melhorarTextoParaNarracao(texto: string): string {
     .replace(/!/g, '! <break time="0.4s"/>') // Pausa para exclamações
     .replace(/\?/g, '? <break time="0.4s"/>'); // Pausa para perguntas
 
-  // Adicionar tags de emoção baseadas no conteúdo
-  if (textoMelhorado.includes('você') || textoMelhorado.includes('mãe')) {
-    textoMelhorado = '<speak><prosody rate="medium" pitch="medium">' + textoMelhorado + '</prosody></speak>';
-  }
+  // Simplificar SSML - usar apenas pausas básicas
+  // Remover qualquer SSML complexo que possa causar problemas
+  textoMelhorado = textoMelhorado
+    .replace(/<speak>/g, '')
+    .replace(/<\/speak>/g, '')
+    .replace(/<prosody[^>]*>/g, '')
+    .replace(/<\/prosody>/g, '')
+    .replace(/<emphasis[^>]*>/g, '')
+    .replace(/<\/emphasis>/g, '')
+    .replace(/<break[^>]*>/g, '')
+    .replace(/<\/break>/g, '');
 
-  // Adicionar ênfase em palavras importantes
-  const palavrasImportantes = ['importante', 'essencial', 'fundamental', 'incrível', 'especial', 'mágico'];
-  palavrasImportantes.forEach(palavra => {
-    const regex = new RegExp(`\\b${palavra}\\b`, 'gi');
-    textoMelhorado = textoMelhorado.replace(regex, `<emphasis level="moderate">${palavra}</emphasis>`);
-  });
+  // Adicionar apenas pausas simples e naturais
+  textoMelhorado = textoMelhorado
+    .replace(/\.\.\./g, '...') // Manter reticências simples
+    .replace(/\./g, '.') // Manter pontos simples
+    .replace(/,/g, ',') // Manter vírgulas simples
+    .replace(/!/g, '!') // Manter exclamações simples
+    .replace(/\?/g, '?'); // Manter perguntas simples
 
-  // Adicionar variação de ritmo para perguntas
-  if (textoMelhorado.includes('?')) {
-    textoMelhorado = textoMelhorado.replace(/\?/g, '? <prosody rate="slow" pitch="high">');
-  }
-
-  // Adicionar tom mais suave para frases emocionais
-  if (textoMelhorado.includes('amor') || textoMelhorado.includes('especial') || textoMelhorado.includes('mágico')) {
-    textoMelhorado = '<speak><prosody rate="slow" pitch="low">' + textoMelhorado + '</prosody></speak>';
+  // Envolver em SSML básico apenas se necessário
+  if (!textoMelhorado.includes('<speak>')) {
+    textoMelhorado = `<speak>${textoMelhorado}</speak>`;
   }
 
   return textoMelhorado;

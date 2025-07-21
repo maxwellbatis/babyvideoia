@@ -114,6 +114,15 @@ export interface ApiStatus {
     freepik?: string | null;
     cloudinary?: string | null;
   };
+  alerts?: {
+    freepik?: Array<{
+      type: 'usage' | 'error' | 'rate_limit';
+      message: string;
+      timestamp: string;
+      severity: 'info' | 'warning' | 'critical';
+      resolved: boolean;
+    }>;
+  };
 }
 
 export interface ChatMessage {
@@ -266,6 +275,32 @@ export const deleteUserImage = async (id: string): Promise<void> => {
 // Geração de roteiro (novo endpoint)
 export const generateScript = async (data: GenerateVideoRequest): Promise<{ roteiro: string }> => {
   const response = await api.post('/generate-script', data);
+  return response.data;
+};
+
+// Freepik Alerts
+export const getFreepikAlerts = async (): Promise<{ alerts: Array<{
+  type: 'usage' | 'error' | 'rate_limit';
+  message: string;
+  timestamp: string;
+  severity: 'info' | 'warning' | 'critical';
+  resolved: boolean;
+}> }> => {
+  const response = await api.get('/freepik/alerts');
+  return response.data;
+};
+
+export const resolveFreepikAlert = async (alertIndex: number): Promise<void> => {
+  await api.post('/freepik/alerts/resolve', { alertIndex });
+};
+
+export const cleanupFreepikAlerts = async (): Promise<{ message: string }> => {
+  const response = await api.post('/freepik/alerts/cleanup');
+  return response.data;
+};
+
+export const addFreepikKey = async (apiKey: string): Promise<{ message: string }> => {
+  const response = await api.post('/freepik/add-key', { apiKey });
   return response.data;
 };
 

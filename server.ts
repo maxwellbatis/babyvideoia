@@ -386,10 +386,19 @@ app.get('/api/status/apis', async (req, res) => {
       status.freepik = true;
       onlineCount++;
     }
-    // Consumo real Freepik
+    // Consumo real Freepik (modo ilimitado)
     const freepikUsed = getFreepikUsageToday();
-    status.limits.freepik = `100/dia (usado: ${freepikUsed})`;
+    const { getActiveAlerts } = require('./src/utils/freepikUsage');
+    const alerts = getActiveAlerts();
+    
+    status.limits.freepik = `Ilimitado (usado: ${freepikUsed})`;
     status.usage.freepik = freepikUsed;
+    
+    // Adicionar alertas se houver
+    if (alerts.length > 0) {
+      status.alerts = status.alerts || {};
+      status.alerts.freepik = alerts;
+    }
   } catch (e: any) {
     status.errors.freepik = e.message || e;
     status.usage.freepik = null;
@@ -617,6 +626,53 @@ app.post('/api/test/freepik', async (req, res) => {
   } catch (error) {
     console.error('Erro ao testar Freepik:', error);
     res.status(500).json({ error: 'Falha ao conectar com Freepik' });
+  }
+});
+
+// Endpoints para gerenciar alertas do Freepik
+app.get('/api/freepik/alerts', async (req, res) => {
+  try {
+    const { getActiveAlerts } = require('./src/utils/freepikUsage');
+    const alerts = getActiveAlerts();
+    res.json({ alerts });
+  } catch (error) {
+    console.error('Erro ao obter alertas Freepik:', error);
+    res.status(500).json({ error: 'Falha ao obter alertas' });
+  }
+});
+
+app.post('/api/freepik/alerts/resolve', async (req, res) => {
+  try {
+    const { alertIndex } = req.body;
+    const { resolveAlert } = require('./src/utils/freepikUsage');
+    const result = resolveAlert(alertIndex);
+    res.json(result);
+  } catch (error) {
+    console.error('Erro ao resolver alerta Freepik:', error);
+    res.status(500).json({ error: 'Falha ao resolver alerta' });
+  }
+});
+
+app.post('/api/freepik/alerts/cleanup', async (req, res) => {
+  try {
+    const { cleanupOldAlerts } = require('./src/utils/freepikUsage');
+    const result = cleanupOldAlerts();
+    res.json(result);
+  } catch (error) {
+    console.error('Erro ao limpar alertas Freepik:', error);
+    res.status(500).json({ error: 'Falha ao limpar alertas' });
+  }
+});
+
+app.post('/api/freepik/add-key', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    const { addNewFreepikKey } = require('./src/utils/freepikUsage');
+    const result = await addNewFreepikKey(apiKey);
+    res.json(result);
+  } catch (error) {
+    console.error('Erro ao adicionar chave Freepik:', error);
+    res.status(500).json({ error: 'Falha ao adicionar chave' });
   }
 });
 
